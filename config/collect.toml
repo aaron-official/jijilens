@@ -1,0 +1,112 @@
+# What `jijilens collect` gathers from jiji.ug, and how slowly.
+#
+# Each category is our `key` (database key and image folder), a Jiji category
+# `slug` (https://jiji.ug/<slug>, from https://jiji.ug/llms.txt) and optional
+# `filters`, the listing API's own attribute filters. Filters narrow a broad
+# Jiji category to one kind of product: "TV & Video Equipment" alone is
+# mostly decoders, while its "Type = TVs" filter is TVs only.
+#
+# Specific, visually distinct categories that match what people photograph
+# in rooms and outfits. Filters checked live on 2026-10-22; counts are what
+# Jiji showed that day.
+
+base_url = "https://jiji.ug"
+
+# --- Electronics ---
+[[categories]]
+key = "phones"
+label = "Phones"
+slug = "mobile-phones"  # ~14,000 ads
+
+[[categories]]
+key = "laptops"
+label = "Laptops & computers"
+slug = "computers-and-laptops"  # ~12,000 ads
+
+[[categories]]
+key = "smart-watches"
+label = "Smart watches"
+slug = "smart-watches"  # ~3,700 ads
+
+[[categories]]
+key = "tvs"
+label = "TVs"
+slug = "tv-dvd-equipment"  # 9,178 ads
+filters = { filter_attr_272_type = "TVs" }
+
+[[categories]]
+key = "speakers"
+label = "Speakers"
+slug = "audio-and-music-equipment"  # 6,679 ads
+filters = { filter_attr_452_type = "Speakers" }
+
+# --- Furniture ---
+[[categories]]
+key = "sofas"
+label = "Sofas"
+slug = "furniture"  # 3,956 ads
+filters = { filter_attr_248_type = "Sofas" }
+
+[[categories]]
+key = "beds"
+label = "Beds"
+slug = "furniture"  # 3,704 ads
+filters = { filter_attr_248_type = "Beds & Bed Frames" }
+
+[[categories]]
+key = "tables"
+label = "Tables"
+slug = "furniture"  # 7,709 ads
+filters = { filter_attr_248_type = "Tables" }
+
+[[categories]]
+key = "chairs"
+label = "Chairs"
+slug = "furniture"  # 11,220 ads
+filters = { filter_attr_248_type = "Chairs" }
+
+# --- Fashion ---
+[[categories]]
+key = "mens-shoes"
+label = "Men's shoes"
+slug = "mens-shoes"  # ~20,900 ads
+
+[[categories]]
+key = "womens-shoes"
+label = "Women's shoes"
+slug = "shoes"
+
+[[categories]]
+key = "womens-bags"
+label = "Women's bags"
+slug = "bags"
+
+[[categories]]
+key = "dresses"
+label = "Dresses"
+slug = "clothing"  # 559 ads
+filters = { filter_attr_type = "Dresses" }
+
+[[categories]]
+key = "mens-clothing"
+label = "Men's clothing"
+slug = "mens-clothing"
+
+[collect]
+max_listings_per_category = 300
+# The listing API serves 24 ads a page. Promoted ads repeat across pages, so
+# allow some slack over 300 / 24.
+max_pages_per_category = 30
+# A seller's 5 best shots are plenty for retrieval; more is mostly repeats.
+max_images_per_listing = 5
+# Images smaller than this on their short side are rejected.
+min_image_side = 200
+
+[http]
+# One request at a time, with a random pause before each.
+page_delay_seconds = [2.0, 5.0]   # listing API and ad pages
+image_delay_seconds = [0.5, 1.5]  # image CDN
+timeout_seconds = 30
+max_retries = 4                   # on 429, 5xx and network errors, with exponential backoff
+stop_after_consecutive_failures = 8
+user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
