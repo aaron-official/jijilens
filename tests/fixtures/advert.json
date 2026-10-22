@@ -1,0 +1,42 @@
+{
+  "_comment": "Shape of pinia.AdvertsStore.advertItem on a jiji.ug ad page (2026-10-22). All personal fields hold fake values; they exist to prove the allowlist drops them.",
+  "guid": "TESTguid0000000000000001",
+  "id": 9000001,
+  "title": "Samsung Galaxy S23 Ultra 256GB Black",
+  "description": "Brand new, sealed.\nCall or WhatsApp 0772 123 456 / +256-701-234567.\nEmail shop@example.com, IG @test_shop_ug, more at https://example.com/shop\nPrice 3,200,000 negotiable. 12 months warranty.",
+  "attrs": [
+    {"name": "Brand", "value": "Samsung", "data_type": "str", "unit": null, "group_type": "value"},
+    {"name": "Storage", "value": "256", "data_type": "int", "unit": "GB", "group_type": "value"},
+    {"name": "Condition", "value": "Brand New", "data_type": "str", "unit": null, "group_type": "value"},
+    {"name": "Features", "value": ["NFC", "Fingerprint", "IP68"], "data_type": "list", "unit": null, "group_type": "value"},
+    {"name": "Seller note", "value": "ring 0700000000", "data_type": "str", "unit": null, "group_type": "value"},
+    {"value": "Bulk prices", "unit": null}
+  ],
+  "category_id": 54,
+  "category_name": "Mobile Phones",
+  "category_slug": "mobile-phones",
+  "price": {"value": 3200000, "type": "Amount", "title": "USh 3,200,000", "period": null, "is_closed": false},
+  "price_obj": {"value": 3200000, "view": "USh 3,200,000", "period": null, "bulk": null, "type": null},
+  "region_name": "Central Division",
+  "region_slug": "central-division",
+  "region_text": "Kampala, Central Division",
+  "url": "/central-division/mobile-phones/samsung-galaxy-s23-ultra-TESTguid0000000000000001.html?page=1&pos=3&lid=abc",
+  "is_active": true,
+  "is_closed": false,
+  "date_created": "Tue, 24 Feb 2026 11:02:26 GMT",
+  "date_edited": "Wed, 21 Oct 2026 08:00:00 GMT",
+  "count_images": 3,
+  "images": [
+    {"id": 101, "url": "https://pictures-uganda.jijistatic.com/101_MTIwMC0xNjAw.webp", "is_main": false, "width": 1200, "height": 1600, "center": null},
+    {"id": 100, "url": "https://pictures-uganda.jijistatic.com/100_MTIwMC0xNjAw.webp", "is_main": true, "width": 1200, "height": 1600, "center": null},
+    {"id": 102, "url": "https://pictures-uganda.jijistatic.com/102_MTIwMC0xNjAw.webp", "is_main": false, "width": 900, "height": 1200, "center": null},
+    {"id": 103, "url": "https://assets.jijistatic.com/static/img/no-image/advert.png", "is_main": false}
+  ],
+  "seller": {"user_name": "FAKE SELLER NAME", "user_avatar_url": "https://example.com/avatar.png", "user_rating": 4.9},
+  "user_id": 1234567,
+  "user_phone": "0772999888",
+  "stores": [{"address": "FAKE STORE ADDRESS, Plot 1", "name": "FAKE STORE"}],
+  "message_url": "/chat/start/FAKE",
+  "fb_view_content_data": {"content_ids": ["9000001"]},
+  "admin_info": {}
+}

@@ -1,0 +1,14 @@
+{
+  "_comment": "Shape of /api_web/v1/listing (2026-10-22), trimmed to 3 adverts. Personal fields are fake.",
+  "adverts_list": {
+    "count": 10704,
+    "per_page": 24,
+    "total_pages": 390,
+    "adverts": [
+      {"guid": "TESTguid0000000000000001", "id": 9000001, "title": "Samsung Galaxy S23 Ultra", "url": "/central-division/mobile-phones/samsung-galaxy-s23-ultra-TESTguid0000000000000001.html?page=2&pos=1&lid=x", "category_slug": "mobile-phones", "is_job": false, "is_cv": false, "seller": {"user_name": "FAKE"}, "user_id": 1},
+      {"guid": "TESTguid0000000000000002", "id": 9000002, "title": "iPhone 12 call 0772123456", "url": "/kampala/mobile-phones/iphone-12-TESTguid0000000000000002.html?page=2&pos=2", "category_slug": "mobile-phones", "is_job": false, "is_cv": false},
+      {"guid": "TESTguid0000000000000003", "id": 9000003, "title": "Sales job", "url": "/kampala/jobs/sales-TESTguid0000000000000003.html", "category_slug": "sales-jobs", "is_job": true, "is_cv": false}
+    ]
+  },
+  "next_url": "https://jiji.ug/api_web/v1/listing?slug=mobile-phones&init_page=true&page=3&webp=true"
+}
