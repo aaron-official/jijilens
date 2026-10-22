@@ -1,0 +1,11 @@
+# Collected listings and images are a private research index: never commit them.
+data/
+.env
+
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+dist/
+build/

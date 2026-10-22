@@ -1,0 +1,21 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped  # back up by itself after a reboot or power cut
+    environment:
+      POSTGRES_USER: jijilens
+      POSTGRES_PASSWORD: jijilens
+      POSTGRES_DB: jijilens
+    ports:
+      # 5433 on the host so it doesn't clash with a local Postgres on 5432.
+      - "${JIJILENS_DB_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jijilens -d jijilens"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
