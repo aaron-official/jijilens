@@ -36,9 +36,12 @@ Embedder(get_spec(DEFAULT_MODEL)); Detector(DETECTORS[DEFAULT_DETECTOR])" \
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 USER user
+# OMP_NUM_THREADS: PyTorch threads. Match the CPUs the container is given, or
+# threads fight over a CPU quota and everything slows down.
 ENV PGDATA=/home/user/pgdata \
     DATABASE_URL=postgresql://jijilens@127.0.0.1:5432/jijilens \
     SNAPSHOT_DIR=/snapshot \
-    PORT=7860
+    PORT=7860 \
+    OMP_NUM_THREADS=2
 EXPOSE 7860
 ENTRYPOINT ["entrypoint.sh"]

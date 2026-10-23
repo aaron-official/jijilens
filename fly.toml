@@ -1,0 +1,40 @@
+# Fly.io: one small machine that stops when idle, so the demo only costs
+# while someone is using it. Usage limits (see src/jijilens/api/limits.py)
+# keep any one visitor, or all of them together, from running up the bill.
+app = "jijilens"
+primary_region = "jnb"  # Johannesburg, the region closest to Uganda
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  SNAPSHOT_REPO = "aaron-official/jijilens-snapshot"  # read with the HF_TOKEN secret
+  JIJILENS_CLIENT_IP_HEADER = "fly-client-ip"
+  JIJILENS_PHOTOS_PER_MINUTE = "1"
+  JIJILENS_SEARCHES_PER_MINUTE = "20"
+  JIJILENS_PHOTOS_PER_DAY = "300"
+  OMP_NUM_THREADS = "2"
+
+[http_service]
+  internal_port = 7860
+  force_https = true
+  auto_stop_machines = "stop"  # stop after a few idle minutes; billed only while running
+  auto_start_machines = true   # the next visitor wakes it (startup takes 1-2 min)
+  min_machines_running = 0
+
+  # Past the hard limit, requests wait instead of piling onto the one machine.
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 8
+    hard_limit = 16
+
+  [[http_service.checks]]
+    grace_period = "240s"  # models and the snapshot load before the app answers
+    interval = "60s"
+    timeout = "5s"
+    method = "GET"
+    path = "/api/health"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "4gb"  # two models, PyTorch and Postgres need about 3 GB
