@@ -83,6 +83,18 @@ Each collection phase can also run on its own (`collect discover`, `collect deta
 - **No close match.** If the best result is below the model's calibrated similarity (0.80 for SigLIP 2), the page says so and labels the results as the nearest the catalog has. A mouse or a TV remote, neither of which the catalog stocks, gets this state; a JBL speaker returns a JBL Xtreme first.
 - Result photos load from Jiji's own image links, and every result links to the listing.
 
+## Docker
+
+One image holds the app, both models (baked in at build time) and its own Postgres 17 + pgvector. At startup it loads a **snapshot** of the searchable catalog into that database and serves on port 7860. Nothing outside the container is needed.
+
+```bash
+uv run jijilens snapshot export      # data/snapshot/, ~37 MB: listings, image urls, vectors
+docker build -t jijilens .
+docker run -p 7860:7860 -v "$PWD/data/snapshot:/snapshot:ro" jijilens
+```
+
+The snapshot holds only what the demo shows (titles, prices, regions, links, Jiji image urls and vectors), never descriptions, attributes or photo files. It is not baked into the image: it is mounted, or with `SNAPSHOT_REPO` (and `HF_TOKEN`) set, downloaded from a private Hugging Face dataset at startup, which is how a Hugging Face Space runs it. The image is about 3.8 GB, half of it model weights; startup takes about 1.5 minutes on an old dual-core CPU.
+
 ## Tests
 
 ```bash

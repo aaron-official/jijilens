@@ -1,0 +1,11 @@
+# Only code, schema and config go into the image. The catalog snapshot is
+# mounted or downloaded at startup, never baked in.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+!db/
+!config/
+!docker/entrypoint.sh
+**/__pycache__
