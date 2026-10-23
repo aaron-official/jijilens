@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JijiLens</title>
+  <meta name="description" content="Snap a room or an outfit, tap one thing in it, and find listings that look like it on Jiji Uganda.">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">◎</span>
+      <span>JijiLens</span>
+    </div>
+    <p class="tagline">Tap anything in a photo. Find it on Jiji.</p>
+  </header>
+
+  <main>
+    <section id="start" class="start">
+      <label class="drop" id="drop">
+        <input id="file" type="file" accept="image/*" hidden>
+        <span class="drop-icon" aria-hidden="true">＋</span>
+        <span class="drop-title">Upload a photo</span>
+        <span class="drop-hint">A room, an outfit, a desk. Or drop an image here.</span>
+      </label>
+    </section>
+
+    <section id="workspace" class="workspace" hidden>
+      <div class="photo-panel">
+        <div class="toolbar">
+          <select id="category" aria-label="Category">
+            <option value="">All categories</option>
+          </select>
+          <button id="whole" type="button" class="ghost">Search whole photo</button>
+          <button id="again" type="button" class="ghost">New photo</button>
+        </div>
+        <div class="stage" id="stage">
+          <img id="photo" alt="Your photo">
+          <svg id="overlay" aria-label="Objects in the photo"></svg>
+        </div>
+        <p class="status" id="status" role="status"></p>
+      </div>
+
+      <div class="results-panel">
+        <div class="results-head">
+          <h2 id="results-title">Matches on Jiji</h2>
+          <canvas id="crop-preview" width="56" height="56" hidden></canvas>
+        </div>
+        <p class="notice" id="notice" hidden></p>
+        <div class="results" id="results">
+          <p class="empty">Tap a highlighted object, or drag on the photo to draw your own box.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    Unofficial demo, not affiliated with Jiji. Every result links to the original listing on jiji.ug.
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
