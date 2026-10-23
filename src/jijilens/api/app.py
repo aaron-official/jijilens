@@ -1,7 +1,7 @@
 """HTTP API and web page: upload a photo, find the objects in it, search with one.
 
     POST /api/photos                  upload -> {photo_id, width, height}
-    POST /api/photos/{id}/objects     detected boxes (slow on CPU; the page asks in the background)
+    POST /api/photos/{id}/objects     detected, named boxes (slow on CPU; the page asks in the background)
     POST /api/photos/{id}/search      {box, category, k} -> matching listings
     GET  /api/categories, /api/health
 
@@ -18,7 +18,10 @@ import threading
 import uuid
 from collections import OrderedDict
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
+
+import numpy as np
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -29,9 +32,9 @@ from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, Field
 
 from jijilens.search import store
-from jijilens.search.detector import Detector
+from jijilens.search.detector import LABELS, Detector
 from jijilens.search.embedder import Embedder
-from jijilens.search.query import search
+from jijilens.search.query import search_vector
 
 STATIC_DIR = Path(__file__).parent / "static"
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
@@ -39,23 +42,31 @@ MAX_SIDE = 1600  # uploads are scaled down to this; boxes are in the scaled phot
 PHOTOS_KEPT = 50  # recent uploads kept in memory so each search doesn't re-upload
 
 
+@dataclass
+class Photo:
+    image: Image.Image
+    # Vectors of the detected objects' crops, computed once at detection, so
+    # tapping an object only has to query the database.
+    vectors: dict[tuple[int, int, int, int], np.ndarray] = field(default_factory=dict)
+
+
 class PhotoCache:
     """The last few uploads, in memory. Nothing is written to disk."""
 
     def __init__(self, size: int = PHOTOS_KEPT):
-        self._photos: OrderedDict[str, Image.Image] = OrderedDict()
+        self._photos: OrderedDict[str, Photo] = OrderedDict()
         self._size = size
         self._lock = threading.Lock()
 
     def add(self, image: Image.Image) -> str:
         photo_id = uuid.uuid4().hex
         with self._lock:
-            self._photos[photo_id] = image
+            self._photos[photo_id] = Photo(image)
             while len(self._photos) > self._size:
                 self._photos.popitem(last=False)
         return photo_id
 
-    def get(self, photo_id: str) -> Image.Image:
+    def get(self, photo_id: str) -> Photo:
         with self._lock:
             if photo_id not in self._photos:
                 raise HTTPException(404, "photo expired; upload it again")
@@ -104,6 +115,8 @@ def create_app(database_url: str, embedder: Embedder, detector: Detector | None 
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Words in the same space as image crops, to name what the detector found.
+        state["label_vectors"] = embedder.embed_texts([f"a photo of a {label}" for label in LABELS])
         pool.open(wait=True)
         with pool.connection() as conn:
             state["model_id"] = store.model_id(conn, spec.name)
@@ -135,17 +148,31 @@ def create_app(database_url: str, embedder: Embedder, detector: Detector | None 
     def objects(photo_id: str) -> dict:
         if detector is None:
             raise HTTPException(503, "object detection is off; draw a box instead")
-        image = photos.get(photo_id)
+        photo = photos.get(photo_id)
         with detect_lock:
-            found = detector.detect(image)
-        return {"objects": [{"box": list(d.box), "label": d.label, "score": round(d.score, 3)} for d in found]}
+            found = detector.detect(photo.image)
+        if not found:
+            return {"objects": []}
+        # The detector's boxes are good but its names often aren't; SigLIP names each crop instead.
+        with embed_lock:
+            vectors = embedder.embed([photo.image.crop(d.box) for d in found])
+        names = np.argmax(vectors @ state["label_vectors"].T, axis=1)
+        objects = []
+        for d, vector, name in zip(found, vectors, names):
+            photo.vectors[d.box] = vector
+            objects.append({"box": list(d.box), "label": LABELS[name], "detector_label": d.label, "score": round(d.score, 3)})
+        return {"objects": objects}
 
     @app.post("/api/photos/{photo_id}/search")
     def search_photo(photo_id: str, request: SearchRequest) -> dict:
-        query = crop(photos.get(photo_id), request.box)
-        with pool.connection() as conn:
+        photo = photos.get(photo_id)
+        vector = photo.vectors.get(tuple(request.box)) if request.box else None
+        if vector is None:
+            query = crop(photo.image, request.box)
             with embed_lock:
-                matches = search(conn, embedder, state["model_id"], query, k=request.k, category=request.category)
+                vector = embedder.embed([query])[0]
+        with pool.connection() as conn:
+            matches = search_vector(conn, state["model_id"], spec.dim, vector, k=request.k, category=request.category)
             cards = store.listing_cards(conn, [m.listing_id for m in matches])
         results = [
             {

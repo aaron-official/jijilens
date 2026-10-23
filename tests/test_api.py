@@ -11,7 +11,7 @@ from PIL import Image
 from jijilens import db
 from jijilens.config import load_settings
 from jijilens.search import store
-from jijilens.search.detector import Detection, DetectorSpec, clean, iou
+from jijilens.search.detector import LABELS, Detection, DetectorSpec, clean, iou
 from jijilens.search.embedder import get_spec
 
 SPEC = get_spec("siglip2-b16")
@@ -29,12 +29,16 @@ class FakeEmbedder:
         vectors = rng.normal(size=(len(images), SPEC.dim)).astype(np.float32)
         return vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
 
+    def embed_texts(self, texts):
+        vectors = np.random.default_rng(1).normal(size=(len(texts), SPEC.dim)).astype(np.float32)
+        return vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
+
 
 class FakeDetector:
     spec = DetectorSpec("fake", "fake", "omdet", 0.3)
 
     def detect(self, image):
-        return [Detection((10, 20, 110, 220), "speaker", 0.8)]
+        return [Detection((10, 20, 110, 220), "mobile phone", 0.8)]
 
 
 @pytest.fixture(scope="module")
@@ -73,10 +77,16 @@ def test_upload_detect_and_search(database_url):
         assert (photo["width"], photo["height"]) == (400, 300)
 
         objects = client.post(f"/api/photos/{photo['photo_id']}/objects").json()["objects"]
-        assert objects == [{"box": [10, 20, 110, 220], "label": "speaker", "score": 0.8}]
+        assert [(o["box"], o["detector_label"]) for o in objects] == [([10, 20, 110, 220], "mobile phone")]
+        assert objects[0]["label"] in LABELS
+        assert embedder.calls[-1] == [(100, 200)]  # the crop was embedded once, at detection
 
+        calls = len(embedder.calls)
         found = client.post(f"/api/photos/{photo['photo_id']}/search", json={"box": [10, 20, 110, 220], "k": 5}).json()
-        assert embedder.calls[-1] == [(100, 200)]  # searched with the crop, not the whole photo
+        assert len(embedder.calls) == calls  # tapping a detected object reuses its vector
+
+        client.post(f"/api/photos/{photo['photo_id']}/search", json={"box": [0, 0, 50, 60], "k": 5})
+        assert embedder.calls[-1] == [(50, 60)]  # a hand-drawn box is embedded on demand
         assert 1 <= len(found["results"]) <= 5
         first = found["results"][0]
         assert first["url"].startswith("https://jiji.ug/") and first["image_url"].startswith("http")
@@ -111,4 +121,8 @@ def test_clean_drops_duplicates_and_tiny_boxes():
     ]
     kept = clean(found, 960, 800)
     assert [(d.label, d.box) for d in kept] == [("mobile phone", (100, 100, 300, 400)), ("shoe", (0, 500, 200, 800))]
+
+    sofa = Detection((0, 0, 960, 800), "sofa", 0.33)  # the couch the photo was taken on
+    assert [d.label for d in clean([*found, sofa], 960, 800)] == ["mobile phone", "shoe"]
+    assert [d.label for d in clean([sofa], 960, 800)] == ["sofa"]  # alone, it is the object
     assert iou((0, 0, 10, 10), (0, 0, 10, 10)) == 1.0
