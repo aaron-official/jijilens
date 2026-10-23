@@ -8,6 +8,7 @@
     jijilens search PHOTO [--crop x1,y1,x2,y2] [--category KEY] [-k N] [--model NAME]
     jijilens eval [--model NAME] [--hnsw-sample N]
     jijilens serve [--host H] [--port N] [--model NAME] [--detector NAME|none]
+    jijilens snapshot export [--out DIR] | load DIR [--if-empty]
 """
 
 from __future__ import annotations
@@ -78,6 +79,14 @@ def main(argv: list[str] | None = None) -> int:
     serve.add_argument("--model", choices=list(MODELS), default=DEFAULT_MODEL)
     serve.add_argument("--detector", choices=[*DETECTORS, "none"], default=DEFAULT_DETECTOR)
 
+    snap = sub.add_parser("snapshot", help="a slim copy of the searchable catalog, for the deployed app")
+    snap_sub = snap.add_subparsers(dest="action", required=True)
+    snap_export = snap_sub.add_parser("export")
+    snap_export.add_argument("--out", type=Path, help="default: <DATA_DIR>/snapshot")
+    snap_load = snap_sub.add_parser("load")
+    snap_load.add_argument("dir", type=Path)
+    snap_load.add_argument("--if-empty", action="store_true", help="do nothing if the database already has listings")
+
     args = parser.parse_args(argv)
     if args.command == "serve":
         return _serve(load_settings(), args)
@@ -93,6 +102,8 @@ def main(argv: list[str] | None = None) -> int:
             return _stats(conn)
         if args.command == "export":
             return _export(conn, args.out or settings.data_dir / "export")
+        if args.command == "snapshot":
+            return _snapshot(conn, settings, args)
         if args.command == "embed":
             return _embed(conn, settings, args)
         if args.command == "search":
@@ -223,6 +234,25 @@ def _eval(conn, args, out_dir: Path) -> int:
     path = out_dir / f"{spec.name}-{report['run_at'].replace(':', '')}.json"
     path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     log(f"\nsaved {path}")
+    return 0
+
+
+def _snapshot(conn, settings, args) -> int:
+    from jijilens import snapshot
+
+    if args.action == "export":
+        out = args.out or settings.data_dir / "snapshot"
+        log(f"exporting to {out}")
+        snapshot.export(conn, out, log=log)
+        return 0
+    db.migrate(conn)
+    if args.if_empty and not snapshot.is_empty(conn):
+        log("database already has listings; snapshot not loaded")
+        return 0
+    store.prepare(conn)
+    log(f"loading {args.dir}")
+    manifest = snapshot.load(conn, args.dir, log=log)
+    log(f"loaded snapshot from {manifest['created_at']}")
     return 0
 
 
