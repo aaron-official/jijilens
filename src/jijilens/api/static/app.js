@@ -11,6 +11,7 @@ const state = {
   height: 0,
   objects: [],
   box: null, // the box last searched; null = whole photo
+  mode: "box", // "box" or "whole": every detected object
   searchSeq: 0,
   searched: false,
 };
@@ -33,7 +34,7 @@ $("again").addEventListener("click", () => {
 });
 
 async function start(file) {
-  Object.assign(state, { photoId: null, objects: [], box: null, searched: false });
+  Object.assign(state, { photoId: null, objects: [], box: null, mode: "box", searched: false });
   $("start").hidden = true;
   $("workspace").hidden = false;
   $("photo").src = URL.createObjectURL(file);
@@ -108,7 +109,7 @@ function drawObjects() {
 function markActive() {
   $("overlay").querySelectorAll(".obj").forEach((g) => {
     const box = state.objects[g.dataset.index].box;
-    g.classList.toggle("active", !!state.box && box.every((v, i) => v === state.box[i]));
+    g.classList.toggle("active", state.mode === "whole" || (!!state.box && box.every((v, i) => v === state.box[i])));
   });
 }
 
@@ -181,33 +182,94 @@ function displayScale() {
 }
 
 // ---- search ---------------------------------------------------------------
+// Two modes: one box (a tapped object or a drawn box), or the whole photo.
+// The whole photo means every detected object, each with its own results;
+// a single vector of the whole photo only finds whatever dominates it.
 
-$("whole").addEventListener("click", () => state.photoId && search(null));
+$("whole").addEventListener("click", () => state.photoId && searchWhole());
+
+const PER_OBJECT = 6;
+
+function rerun() {
+  if (state.mode === "whole") searchWhole();
+  else if (state.searched) search(state.box);
+}
 
 async function search(box) {
   if (!state.photoId) return;
+  state.mode = "box";
   state.box = box ? box.map(Math.round) : null;
   state.searched = true;
   markActive();
-  drawCropPreview(state.box);
+  setPreviews([state.box]);
   const seq = ++state.searchSeq;
   showSkeletons();
-  $("notice").hidden = true;
 
   let found;
   try {
-    found = await api(`/api/photos/${state.photoId}/search`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ box: state.box, category: category.value || null, k: 12 }),
-    });
+    found = await searchBox(state.box, 12);
   } catch (err) {
     if (seq === state.searchSeq) showEmpty(`Search failed: ${err.message}`);
     return;
   }
   if (seq !== state.searchSeq) return; // a newer search started
-  renderResults(found);
+  if (!found.results.length) {
+    showEmpty("No listings found in this category.");
+    return;
+  }
+  $("results").replaceChildren(
+    ...(found.close_match ? [] : [textEl("p", "notice", "No close match. These are the nearest listings in the catalog.")]),
+    grid(found),
+  );
   revealResults();
+}
+
+async function searchWhole() {
+  if (!state.objects.length) return search(null); // detection not done, or found nothing
+  state.mode = "whole";
+  state.box = null;
+  state.searched = true;
+  markActive();
+  setPreviews(state.objects.map((o) => o.box));
+  const seq = ++state.searchSeq;
+  showSkeletons();
+
+  let all;
+  try {
+    all = await Promise.all(state.objects.map((o) => searchBox(o.box, PER_OBJECT)));
+  } catch (err) {
+    if (seq === state.searchSeq) showEmpty(`Search failed: ${err.message}`);
+    return;
+  }
+  if (seq !== state.searchSeq) return;
+  // Best-matching object first: what the catalog actually stocks leads.
+  const best = (i) => all[i].results[0]?.similarity ?? -1;
+  const order = state.objects.map((o, i) => i).sort((a, b) => best(b) - best(a));
+  $("results").replaceChildren(
+    ...order.map((i) => {
+      const obj = state.objects[i];
+      const section = textEl("section", "group", "");
+      const head = textEl("div", "group-head", "");
+      const title = textEl("h3", "", obj.label);
+      head.append(cropCanvas(obj.box, 36), title);
+      if (all[i].results.length && !all[i].close_match) head.append(textEl("span", "chip", "no close match"));
+      const more = textEl("button", "ghost more", "See all");
+      more.type = "button";
+      more.addEventListener("click", () => search(obj.box));
+      head.append(more);
+      section.append(head, all[i].results.length ? grid(all[i]) : textEl("p", "empty", "No listings found in this category."));
+      return section;
+    }),
+  );
+  revealResults();
+}
+
+function searchBox(box, k) {
+  return api(`/api/photos/${state.photoId}/search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ box, category: category.value || null, k }),
+  });
 }
 
 // On a phone the results sit below the photo; bring them into view after a tap
@@ -225,65 +287,62 @@ $("to-photo").addEventListener("click", () => $("stage").scrollIntoView({ behavi
 
 const smooth = () => (window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
 
-function renderResults({ results, close_match, threshold }) {
-  const list = $("results");
-  if (!results.length) {
-    showEmpty("No listings found in this category.");
-    return;
-  }
-  $("notice").hidden = close_match;
-  $("notice").textContent =
-    "No close match. These are the nearest listings in the catalog.";
-  list.replaceChildren(
-    ...results.map((r) => {
-      const close = threshold == null || r.similarity >= threshold;
-      const card = el("a", { class: `card${close ? "" : " weak"}`, href: r.url, target: "_blank", rel: "noopener" }, document);
-      const img = document.createElement("img");
-      Object.assign(img, { className: "thumb", src: r.image_url, alt: "", loading: "lazy", referrerPolicy: "no-referrer" });
-      const body = document.createElement("div");
-      body.className = "body";
-      body.append(
-        textEl("span", "price", formatPrice(r)),
-        textEl("span", "title", r.title),
-      );
-      const meta = document.createElement("div");
-      meta.className = "meta";
-      meta.append(
-        textEl("span", "", r.category.replace(/-/g, " ")),
-        textEl("span", `score${close ? " close" : ""}`, `${Math.round(r.similarity * 100)}% match`),
-      );
-      body.append(meta);
-      card.append(img, body);
-      card.title = `${r.title}\nOpen on Jiji${r.region ? ` (${r.region})` : ""}`;
-      return card;
-    }),
+function grid({ results, threshold }) {
+  const cards = textEl("div", "grid", "");
+  cards.append(...results.map((r) => card(r, threshold)));
+  return cards;
+}
+
+function card(r, threshold) {
+  const close = threshold == null || r.similarity >= threshold;
+  const link = el("a", { class: `card${close ? "" : " weak"}`, href: r.url, target: "_blank", rel: "noopener" }, document);
+  const img = document.createElement("img");
+  Object.assign(img, { className: "thumb", src: r.image_url, alt: "", loading: "lazy", referrerPolicy: "no-referrer" });
+  const body = textEl("div", "body", "");
+  const meta = textEl("div", "meta", "");
+  meta.append(
+    textEl("span", "", r.category.replace(/-/g, " ")),
+    textEl("span", `score${close ? " close" : ""}`, `${Math.round(r.similarity * 100)}% match`),
   );
+  body.append(textEl("span", "price", formatPrice(r)), textEl("span", "title", r.title), meta);
+  link.append(img, body);
+  link.title = `${r.title}\nOpen on Jiji${r.region ? ` (${r.region})` : ""}`;
+  return link;
 }
 
 function showSkeletons() {
-  $("results").replaceChildren(...Array.from({ length: 6 }, () => textEl("div", "skeleton", "")));
+  const cards = textEl("div", "grid", "");
+  cards.append(...Array.from({ length: 6 }, () => textEl("div", "skeleton", "")));
+  $("results").replaceChildren(cards);
 }
 
 function showEmpty(message) {
-  $("notice").hidden = true;
   $("results").replaceChildren(textEl("p", "empty", message));
-  $("crop-preview").hidden = true;
+  $("previews").replaceChildren();
 }
 
-function drawCropPreview(box) {
-  const canvas = $("crop-preview");
+// Thumbnails of what is being searched, in the results header.
+function setPreviews(boxes, max = 4) {
+  const shown = boxes.slice(0, max).map((box) => cropCanvas(box, 44));
+  if (boxes.length > max) shown.push(textEl("span", "preview more-count", `+${boxes.length - max}`));
+  $("previews").replaceChildren(...shown);
+}
+
+function cropCanvas(box, size) {
+  const canvas = document.createElement("canvas");
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = canvas.height = Math.round(size * ratio);
+  canvas.style.width = canvas.style.height = `${size}px`;
+  canvas.className = "preview";
   const img = $("photo");
-  if (!img.naturalWidth) return;
+  if (!img.naturalWidth) return canvas;
   const k = img.naturalWidth / state.width; // the displayed file may be larger than the server's copy
   const [x1, y1, x2, y2] = box || [0, 0, state.width, state.height];
   const w = (x2 - x1) * k;
   const h = (y2 - y1) * k;
-  const side = Math.max(w, h);
-  const ctx = canvas.getContext("2d");
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const s = canvas.width / side;
-  ctx.drawImage(img, x1 * k, y1 * k, w, h, (canvas.width - w * s) / 2, (canvas.height - h * s) / 2, w * s, h * s);
-  canvas.hidden = false;
+  const s = canvas.width / Math.max(w, h);
+  canvas.getContext("2d").drawImage(img, x1 * k, y1 * k, w, h, (canvas.width - w * s) / 2, (canvas.height - h * s) / 2, w * s, h * s);
+  return canvas;
 }
 
 // ---- helpers --------------------------------------------------------------
@@ -375,7 +434,7 @@ const category = {
     this.value = this.options[i].key;
     $("category-value").textContent = this.options[i].label;
     this.close();
-    if (changed && state.searched) search(state.box);
+    if (changed) rerun();
   },
 };
 

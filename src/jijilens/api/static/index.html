@@ -51,11 +51,10 @@
 
       <div class="results-panel">
         <div class="results-head" id="results-head">
-          <canvas id="crop-preview" width="56" height="56" hidden></canvas>
+          <div class="previews" id="previews"></div>
           <h2 id="results-title">Matches on Jiji</h2>
           <button id="to-photo" type="button" class="ghost to-photo">Pick another object</button>
         </div>
-        <p class="notice" id="notice" hidden></p>
         <div class="results" id="results">
           <p class="empty">Tap a highlighted object, or drag on the photo to draw your own box.</p>
         </div>
@@ -64,7 +63,8 @@
   </main>
 
   <footer class="foot">
-    Unofficial demo, not affiliated with Jiji. Every result links to the original listing on jiji.ug.
+    <p>Unofficial demo, not affiliated with Jiji. Every result links to the original listing on jiji.ug.</p>
+    <p>Made with 🫶 by <a href="https://github.com/aaron-official/" target="_blank" rel="noopener">aaron-official</a></p>
   </footer>
 
   <script src="/static/app.js"></script>

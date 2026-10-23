@@ -155,12 +155,20 @@ rect.drawing { fill: rgba(255, 255, 255, .12); stroke: #fff; stroke-width: 2; st
 
 .results-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; scroll-margin-top: 12px; }
 .results-head h2 { font-size: 17px; margin: 0; flex: 1; }
-#crop-preview { border-radius: 8px; border: 1px solid var(--line); background: var(--surface); width: 44px; height: 44px; flex: none; }
+.previews { display: flex; gap: 6px; flex: none; }
+.preview { border-radius: 8px; border: 1px solid var(--line); background: var(--surface); flex: none; }
+.more-count { width: 44px; height: 44px; display: grid; place-items: center; color: var(--muted); font-size: 13px; font-weight: 600; }
 .to-photo { display: none; font-size: 13.5px; padding: 6px 12px; }
 
 .notice { background: var(--warn-bg); color: var(--warn-text); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
 
-.results { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+
+.group + .group { margin-top: 26px; }
+.group-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.group-head h3 { margin: 0; font-size: 15.5px; text-transform: capitalize; flex: 1; min-width: 0; }
+.group-head .more { font-size: 13px; padding: 5px 12px; flex: none; }
+.chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--warn-bg); color: var(--warn-text); white-space: nowrap; }
 .empty { color: var(--muted); grid-column: 1 / -1; margin: 8px 0; }
 
 .card {
@@ -181,6 +189,10 @@ rect.drawing { fill: rgba(255, 255, 255, .12); stroke: #fff; stroke-width: 2; st
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
 
 .foot { color: var(--muted); font-size: 12.5px; text-align: center; padding: 16px; }
+.foot p { margin: 0; }
+.foot p + p { margin-top: 4px; }
+.foot a { color: var(--text); font-weight: 600; text-decoration: none; border-bottom: 1px solid var(--line); }
+.foot a:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ---- phones and small tablets ---- */
 @media (max-width: 860px) {
@@ -208,7 +220,7 @@ rect.drawing { fill: rgba(255, 255, 255, .12); stroke: #fff; stroke-width: 2; st
   .stage img { width: 100%; max-height: none; }
   .status { font-size: 13.5px; }
 
-  .results { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .card .body { padding: 7px 8px 9px; }
   .card .title { font-size: 13px; }
   .card .meta { flex-direction: column; gap: 0; }
