@@ -48,9 +48,18 @@ async function start(file) {
   try {
     photo = await api("/api/photos", { method: "POST", body: form });
   } catch (err) {
+    // Over a usage limit: back to the start screen, which says when to try again.
+    if (err.status === 429) {
+      $("workspace").hidden = true;
+      $("start").hidden = false;
+      $("start-message").textContent = err.message;
+      $("start-message").hidden = false;
+      return;
+    }
     setStatus(`Upload failed: ${err.message}`);
     return;
   }
+  $("start-message").hidden = true;
   Object.assign(state, { photoId: photo.photo_id, width: photo.width, height: photo.height });
   $("overlay").setAttribute("viewBox", `0 0 ${photo.width} ${photo.height}`);
   $("overlay").setAttribute("preserveAspectRatio", "none");
@@ -211,7 +220,7 @@ async function search(box) {
   try {
     found = await searchBox(state.box, 12);
   } catch (err) {
-    if (seq === state.searchSeq) showEmpty(`Search failed: ${err.message}`);
+    if (seq === state.searchSeq) showEmpty(err.status === 429 ? err.message : `Search failed: ${err.message}`);
     return;
   }
   if (seq !== state.searchSeq) return; // a newer search started
@@ -240,7 +249,7 @@ async function searchWhole() {
   try {
     all = await Promise.all(state.objects.map((o) => searchBox(o.box, PER_OBJECT)));
   } catch (err) {
-    if (seq === state.searchSeq) showEmpty(`Search failed: ${err.message}`);
+    if (seq === state.searchSeq) showEmpty(err.status === 429 ? err.message : `Search failed: ${err.message}`);
     return;
   }
   if (seq !== state.searchSeq) return;
@@ -354,7 +363,9 @@ async function api(url, options) {
   if (!res.ok) {
     let detail = res.statusText;
     try { detail = (await res.json()).detail || detail; } catch {}
-    throw new Error(typeof detail === "string" ? detail : res.statusText);
+    const err = new Error(typeof detail === "string" ? detail : res.statusText);
+    err.status = res.status;
+    throw err;
   }
   return res.json();
 }
