@@ -73,3 +73,47 @@ def test_closed_listing_gets_no_images(conn, advert):
     repo.save_listing(conn, listing_id, listing, listing.images)
     assert conn.execute("SELECT status FROM listings WHERE id = %s", (listing_id,)).fetchone()["status"] == "gone"
     assert conn.execute("SELECT count(*) AS n FROM listing_images WHERE listing_id = %s", (listing_id,)).fetchone()["n"] == 0
+
+
+def test_embeddings_search_uses_the_models_hnsw_index(conn):
+    import numpy as np
+
+    from jijilens.search import store
+
+    store.prepare(conn)
+    category_id = repo.ensure_categories(conn, [Category("test-sofas", "Test sofas", "furniture")])["test-sofas"]
+    conn.execute(
+        """INSERT INTO listings (source_id, collection_category_id, title, source_url, status)
+           VALUES ('TESTsofa', %s, 'Grey sofa', 'https://jiji.ug/x', 'detailed')""",
+        (category_id,),
+    )
+    listing_id = conn.execute("SELECT id FROM listings WHERE source_id = 'TESTsofa'").fetchone()["id"]
+    image_ids = [
+        conn.execute(
+            """INSERT INTO listing_images (listing_id, source_image_id, position, url, local_path, status)
+               VALUES (%s, %s, %s, 'u', %s, 'ok') RETURNING id""",
+            (listing_id, n, n, f"images/{n}.webp"),
+        ).fetchone()["id"]
+        for n in range(3)
+    ]
+    model_id = store.ensure_model(conn, "test-model-4d", 4)
+    vectors = np.eye(4, dtype=np.float32)[:3]
+    store.save_embeddings(conn, model_id, zip(image_ids, vectors))
+    assert {r["id"] for r in store.pending_embeddings(conn, model_id)}.isdisjoint(image_ids)
+    store.ensure_index(conn, model_id, 4)
+
+    query = np.array([0.1, 0.9, 0, 0], dtype=np.float32)
+    hits = store.nearest_images(conn, model_id, 4, query, limit=2, category="test-sofas")
+    assert [h["image_id"] for h in hits] == [image_ids[1], image_ids[0]]
+    hits = store.nearest_images(conn, model_id, 4, query, limit=1, exclude_image_id=image_ids[1])
+    assert hits[0]["image_id"] == image_ids[0]
+
+    conn.execute("SET LOCAL enable_seqscan = off")  # tiny table: make the planner show it can use the index
+    plan = "\n".join(
+        row["QUERY PLAN"]
+        for row in conn.execute(
+            f"EXPLAIN SELECT image_id FROM image_embeddings WHERE model_id = {model_id}"
+            " ORDER BY embedding::vector(4) <=> '[0,1,0,0]' LIMIT 5"
+        )
+    )
+    assert f"image_embeddings_model{model_id}_hnsw" in plan
