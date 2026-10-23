@@ -24,6 +24,7 @@ class Match:
     image_id: int
     local_path: str
     category: str
+    image_url: str = ""  # Jiji's own copy of the matched photo
 
 
 def parse_box(text: str) -> tuple[int, int, int, int]:
@@ -62,7 +63,7 @@ def rank_listings(hits: Iterable[dict], k: int) -> list[Match]:
         current = best.get(hit["listing_id"])
         if current is None or similarity > current.similarity:
             best[hit["listing_id"]] = Match(
-                hit["listing_id"], similarity, hit["image_id"], hit["local_path"], hit["category"]
+                hit["listing_id"], similarity, hit["image_id"], hit["local_path"], hit["category"], hit.get("image_url") or ""
             )
     return sorted(best.values(), key=lambda m: m.similarity, reverse=True)[:k]
 

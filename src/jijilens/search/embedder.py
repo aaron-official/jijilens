@@ -22,13 +22,17 @@ class ModelSpec:
     arch: str  # open_clip architecture
     pretrained: str  # open_clip weights tag
     dim: int
+    # Similarity at or above which a result counts as a close match, from `jijilens eval`
+    # calibration. None until a model has been calibrated.
+    close_match: float | None = None
 
 
 MODELS = {
     spec.name: spec
     for spec in (
         # Google's SigLIP 2, ViT-B/16 at 224 px: the quality pick. ~1.1 images/s on a 2012 dual-core CPU.
-        ModelSpec("siglip2-b16", "ViT-B-16-SigLIP2", "webli", 768),
+        # Threshold: own-listing similarity p10 is 0.77, best other-category match p50 is 0.77, p75 0.82.
+        ModelSpec("siglip2-b16", "ViT-B-16-SigLIP2", "webli", 768, close_match=0.80),
         # Apple's MobileCLIP2-S0, built for phones: ~5x faster on the same CPU, lower quality.
         ModelSpec("mobileclip2-s0", "MobileCLIP2-S0", "dfndr2b", 512),
     )

@@ -97,7 +97,8 @@ def nearest_images(
         params["exclude"] = exclude_image_id
     distance = sql.SQL("e.embedding::vector({dim}) <=> %(query)s").format(dim=sql.SQL(str(int(dim))))
     statement = sql.SQL(
-        """SELECT e.image_id, i.listing_id, i.local_path, c.key AS category, 1 - ({distance}) AS similarity
+        """SELECT e.image_id, i.listing_id, i.local_path, i.url AS image_url, c.key AS category,
+                  1 - ({distance}) AS similarity
            FROM image_embeddings e
            JOIN listing_images i ON i.id = e.image_id
            JOIN listings l ON l.id = i.listing_id
@@ -118,6 +119,20 @@ def listing_cards(conn: psycopg.Connection, listing_ids: list[int]) -> dict[int,
         (listing_ids,),
     ).fetchall()
     return {row["id"]: row for row in rows}
+
+
+def categories(conn: psycopg.Connection) -> list[dict]:
+    """Categories that have searchable listings."""
+    return conn.execute(
+        """SELECT c.key, c.label FROM categories c
+           WHERE EXISTS (SELECT 1 FROM listings l WHERE l.collection_category_id = c.id AND l.status = 'detailed')
+           ORDER BY c.id"""
+    ).fetchall()
+
+
+def model_id(conn: psycopg.Connection, name: str) -> int | None:
+    row = conn.execute("SELECT id FROM embedding_models WHERE name = %s", (name,)).fetchone()
+    return row["id"] if row else None
 
 
 def all_embeddings(conn: psycopg.Connection, model_id: int) -> list[dict]:
