@@ -1,5 +1,7 @@
 # JijiLens
 
+**Live demo: [jijilens.fly.dev](https://jijilens.fly.dev)** (it sleeps when idle; the first visit takes about two minutes to wake it).
+
 Multi-object visual product search for [Jiji Uganda](https://jiji.ug). You upload a photo of a room or an outfit, tap one object in it, and get visually similar listings. See [`Building Visual Product Search for Jiji Uganda.md`](Building%20Visual%20Product%20Search%20for%20Jiji%20Uganda.md) for the full design.
 
 **Status: milestone 2, the web app.** Milestone 0 collected a demo catalog of 4,134 listings and 10,166 photos across 14 categories. Milestone 1 embedded them into pgvector and measured search quality. Milestone 2 is a web page: upload a photo, the objects in it are outlined, and tapping one (or drawing a box) shows matching listings that link to Jiji.
@@ -94,6 +96,12 @@ docker run -p 7860:7860 -v "$PWD/data/snapshot:/snapshot:ro" jijilens
 ```
 
 The snapshot holds only what the demo shows (titles, prices, regions, links, Jiji image urls and vectors), never descriptions, attributes or photo files. It is not baked into the image: it is mounted, or with `SNAPSHOT_REPO` (and `HF_TOKEN`) set, downloaded from a private Hugging Face dataset at startup, which is how a Hugging Face Space runs it. The image is about 3.8 GB, half of it model weights; startup takes about 1.5 minutes on an old dual-core CPU.
+
+**Fly.io.** [`fly.toml`](fly.toml) runs one shared-cpu-2x machine with 4 GB in Johannesburg, the region closest to Uganda. It stops when idle and starts on the next visit, so it only costs while in use. Usage limits ([`api/limits.py`](src/jijilens/api/limits.py)) cap each visitor at one new photo and twenty searches a minute, and everyone together at 300 photos a day. The snapshot comes from a private Hugging Face dataset, read with a read-only token stored as the `HF_TOKEN` secret.
+
+```bash
+fly deploy --ha=false   # one machine, never two
+```
 
 ## Tests
 
