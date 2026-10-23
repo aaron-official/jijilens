@@ -1,7 +1,7 @@
 [project]
 name = "jijilens"
 version = "0.1.0"
-description = "Multi-object visual marketplace search for Jiji Uganda. Milestone 0: collecting a non-personal listing catalog."
+description = "Multi-object visual marketplace search for Jiji Uganda."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -9,6 +9,11 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "pillow>=10.4",
     "imagehash>=4.3",
+    "torch>=2.14.1",
+    "torchvision>=0.29.1",
+    "open-clip-torch>=3.3.0",
+    "numpy>=2.4.6",
+    "pgvector>=0.5.1",
 ]
 
 [project.scripts]
@@ -27,3 +32,13 @@ packages = ["src/jijilens"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+# CPU-only PyTorch: this machine has no GPU, and the CUDA wheels are ~3 GB.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
