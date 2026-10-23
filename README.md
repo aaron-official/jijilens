@@ -2,7 +2,7 @@
 
 Multi-object visual product search for [Jiji Uganda](https://jiji.ug). You upload a photo of a room or an outfit, tap one object in it, and get visually similar listings. See [`Building Visual Product Search for Jiji Uganda.md`](Building%20Visual%20Product%20Search%20for%20Jiji%20Uganda.md) for the full design.
 
-**Status: milestone 0, the catalog collector.** It builds a demo catalog of product listings and photos in Postgres (with pgvector enabled for the embedding step that comes next).
+**Status: milestone 1, search by photo.** Milestone 0 collected a demo catalog of 4,134 listings and 10,166 photos across 14 categories. Milestone 1 embeds those photos into pgvector and searches them with a photo or a crop of one, from the command line.
 
 ## What is collected, and what isn't
 
@@ -52,7 +52,22 @@ uv run jijilens collect all
 uv run jijilens export               # data/export/listings.jsonl + images.jsonl
 ```
 
-Each phase can also run on its own (`collect discover`, `collect details --limit 100`, `collect images`). Categories, caps and pacing live in [`config/collect.toml`](config/collect.toml).
+Then embed the photos and search:
+
+```bash
+uv run jijilens embed                # SigLIP 2 vectors + HNSW index (resumable; ~3 h on an old dual-core CPU)
+uv run jijilens search room.jpg --crop 120,340,860,900 --category sofas
+uv run jijilens eval                 # Recall@K per category, threshold calibration, HNSW vs exact
+```
+
+Each collection phase can also run on its own (`collect discover`, `collect details --limit 100`, `collect images`). Categories, caps and pacing live in [`config/collect.toml`](config/collect.toml).
+
+## Search
+
+- **Model.** [SigLIP 2](https://arxiv.org/abs/2502.14786) ViT-B/16 at 224 px through `open_clip`, on CPU-only PyTorch. Each photo becomes a 768-number vector, L2-normalised so cosine similarity ranks matches. `--model mobileclip2-s0` swaps in Apple's MobileCLIP2-S0 (512 numbers, about 5x faster, lower quality) for comparison. Vectors from both can live side by side.
+- **Storage.** `image_embeddings` holds one row per photo per model in an unsized `vector` column. Each model gets its own HNSW index over `embedding::vector(dim)`, limited to its rows. pgvector was chosen over FAISS or a hosted vector database because the listings already live in Postgres: one query does the nearest-neighbour search, filters (category, price, active only) and the join to titles and links, and closed listings drop out of results in the same transaction. At 10k vectors (~31 MB) speed doesn't decide it; `eval` measures it anyway.
+- **Ranking.** A search fetches the nearest photos, keeps each listing's best one, and returns one result per listing, so an ad with five photos can't fill the list.
+- **Evaluation.** `jijilens eval` is leave-one-out: each listing's second photo searches the whole catalog, and Recall@K is how often that listing comes back in the top K. Another seller's ad for the same product counts as a miss, so this is a lower bound. Each query's best match in a *different* category stands in for an out-of-catalog search, which calibrates the "no close matches" threshold. A sample of queries is also run through HNSW and through exact numpy search to report the index's recall and latency. Reports go to `data/eval/`.
 
 ## Tests
 
@@ -66,8 +81,8 @@ The database tests run against the compose database inside a rolled-back transac
 
 ```
 config/collect.toml          categories, caps, pacing
-db/migrations/               schema (categories, listings, listing_images)
-src/jijilens/cli.py          jijilens db | collect | stats | export
+db/migrations/               schema (categories, listings, listing_images, image_embeddings)
+src/jijilens/cli.py          jijilens db | collect | stats | export | embed | search | eval
 src/jijilens/collect/
   http.py                    polite client: pacing, retries, stop on repeated failure
   discover.py                phase 1, listing API
@@ -77,9 +92,15 @@ src/jijilens/collect/
   privacy.py                 contact-detail scrubbing
   images.py                  phase 3, download, validate, strip metadata, hash
   repo.py                    SQL
+src/jijilens/search/
+  embedder.py                models (SigLIP 2, MobileCLIP2) and image -> vector
+  embed.py                   embed the catalog, then build the HNSW index
+  store.py                   pgvector SQL: save, index, nearest images
+  query.py                   crop, search, one result per listing
+  evaluate.py                leave-one-out Recall@K, calibration, HNSW vs exact
 tests/                       unit tests with fake fixtures
 ```
 
 ## Next
 
-Milestone 1 (retrieval only) embeds every image with OpenCLIP/SigLIP into a `vector` column with an HNSW index, and supports search from a manual crop.
+Milestone 2 adds the multi-object part: a FastAPI backend and web page where you upload a photo, detected objects are outlined, and tapping one searches with its crop.
