@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+import numpy as np
 import psycopg
 from PIL import Image, ImageOps
 
@@ -78,7 +79,18 @@ def search(
     category: str | None = None,
 ) -> list[Match]:
     query = embedder.embed([image])[0]
-    hits = store.nearest_images(
-        conn, model_id, embedder.spec.dim, query, limit=k * IMAGES_PER_RESULT, category=category
-    )
+    return search_vector(conn, model_id, embedder.spec.dim, query, k=k, category=category)
+
+
+def search_vector(
+    conn: psycopg.Connection,
+    model_id: int,
+    dim: int,
+    query: np.ndarray,
+    *,
+    k: int = 10,
+    category: str | None = None,
+) -> list[Match]:
+    """Search with a vector already computed, e.g. one cached when the object was detected."""
+    hits = store.nearest_images(conn, model_id, dim, query, limit=k * IMAGES_PER_RESULT, category=category)
     return rank_listings(hits, k)

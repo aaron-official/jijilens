@@ -59,8 +59,22 @@ def iou(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> float:
     return inter / union if union else 0.0
 
 
-def clean(detections: list[Detection], width: int, height: int, *, overlap: float = 0.7, min_side: int = 24, limit: int = 12) -> list[Detection]:
-    """Drop tiny boxes and near-duplicates (the same object under two names), best first."""
+def clean(
+    detections: list[Detection],
+    width: int,
+    height: int,
+    *,
+    overlap: float = 0.7,
+    min_side: int = 24,
+    background: float = 0.85,
+    limit: int = 12,
+) -> list[Detection]:
+    """Drop tiny boxes and near-duplicates (the same object under two names), best first.
+
+    A box covering nearly the whole photo is usually the background ("sofa" for
+    the couch a photo was taken on), so it is dropped when there are other
+    objects. Alone, it is kept: a close-up of a laptop fills the frame.
+    """
     kept: list[Detection] = []
     for d in sorted(detections, key=lambda d: d.score, reverse=True):
         x1, y1, x2, y2 = max(0, d.box[0]), max(0, d.box[1]), min(width, d.box[2]), min(height, d.box[3])
@@ -70,9 +84,9 @@ def clean(detections: list[Detection], width: int, height: int, *, overlap: floa
         if any(iou(box, k.box) > overlap for k in kept):
             continue
         kept.append(Detection(box, d.label, d.score))
-        if len(kept) == limit:
-            break
-    return kept
+    area = width * height
+    objects = [d for d in kept if (d.box[2] - d.box[0]) * (d.box[3] - d.box[1]) < background * area]
+    return (objects or kept)[:limit]
 
 
 def _first_label(text: str) -> str:
