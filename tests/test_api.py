@@ -1,16 +1,16 @@
-"""The web API with stand-in models, against the compose database's real catalog.
-Skipped when the database is down or has no SigLIP 2 embeddings yet."""
+"""The web API with stand-in models, against a small fake catalog in a throwaway
+database, so it runs anywhere a Postgres with pgvector does (locally and in CI)."""
 
 import io
 
 import numpy as np
-import psycopg
 import pytest
 from PIL import Image
 
 from jijilens import db
 from jijilens.api.limits import Limits
-from jijilens.config import load_settings
+from jijilens.collect import repo
+from jijilens.config import Category
 from jijilens.search import store
 from jijilens.search.detector import LABELS, Detection, DetectorSpec, clean, iou
 from jijilens.search.embedder import get_spec
@@ -43,14 +43,34 @@ class FakeDetector:
 
 
 @pytest.fixture(scope="module")
-def database_url():
-    url = load_settings().database_url
-    try:
-        with db.connect(url) as conn:
-            if store.model_id(conn, SPEC.name) is None:
-                pytest.skip("no siglip2-b16 embeddings; run jijilens embed")
-    except psycopg.OperationalError as exc:
-        pytest.skip(f"database not reachable: {exc}")
+def database_url(new_database):
+    """Twelve listings, one photo each, alternating sofas and speakers, with random vectors."""
+    url = new_database()
+    rng = np.random.default_rng(2)
+    with db.connect(url) as conn:
+        store.prepare(conn)
+        ids = repo.ensure_categories(
+            conn, [Category("sofas", "Sofas", "furniture"), Category("speakers", "Speakers", "audio-and-music-equipment")]
+        )
+        model_id = store.ensure_model(conn, SPEC.name, SPEC.dim)
+        vectors = []
+        for n in range(12):
+            key = "sofas" if n % 2 == 0 else "speakers"
+            listing_id = conn.execute(
+                """INSERT INTO listings (source_id, collection_category_id, title, source_url, status, price_ugx)
+                   VALUES (%s, %s, %s, %s, 'detailed', %s) RETURNING id""",
+                (f"T{n}", ids[key], f"{key} {n}", f"https://jiji.ug/x/{n}.html", 100_000 + n),
+            ).fetchone()["id"]
+            image_id = conn.execute(
+                """INSERT INTO listing_images (listing_id, source_image_id, position, url, status)
+                   VALUES (%s, %s, 0, %s, 'ok') RETURNING id""",
+                (listing_id, n, f"https://pictures-uganda.jijistatic.com/{n}.webp"),
+            ).fetchone()["id"]
+            vector = rng.normal(size=SPEC.dim).astype(np.float32)
+            vectors.append((image_id, vector / np.linalg.norm(vector)))
+        store.save_embeddings(conn, model_id, vectors)
+        store.ensure_index(conn, model_id, SPEC.dim)
+        conn.commit()
     return url
 
 

@@ -1,5 +1,7 @@
 # JijiLens
 
+[![tests](https://github.com/aaron-official/jijilens/actions/workflows/tests.yml/badge.svg)](https://github.com/aaron-official/jijilens/actions/workflows/tests.yml)
+
 **Live demo: [jijilens.fly.dev](https://jijilens.fly.dev)** (it sleeps when idle; the first visit takes about two minutes to wake it).
 
 Multi-object visual product search for [Jiji Uganda](https://jiji.ug). You upload a photo of a room or an outfit, tap one object in it, and get visually similar listings. See [`Building Visual Product Search for Jiji Uganda.md`](Building%20Visual%20Product%20Search%20for%20Jiji%20Uganda.md) for the full design.
@@ -109,7 +111,7 @@ fly deploy --ha=false   # one machine, never two
 uv run pytest
 ```
 
-The database tests run against the compose database inside a rolled-back transaction, and are skipped when it is down.
+Database tests use the compose database, inside rolled-back transactions or throwaway databases, so collected data is never touched; they skip when it is down. The API tests seed a small fake catalog, so the whole suite also runs in CI ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)) against a pgvector service container.
 
 ## Layout
 

@@ -1,0 +1,56 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Actions are pinned to commit SHAs (a tag can be moved; a commit cannot).
+# A newer push to the same branch cancels the run it replaces.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    # The same Postgres + pgvector as docker-compose.yml, on the same port.
+    services:
+      db:
+        image: pgvector/pgvector:0.8.7-pg16
+        env:
+          POSTGRES_USER: jijilens
+          POSTGRES_PASSWORD: jijilens
+          POSTGRES_DB: jijilens
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U jijilens -d jijilens"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://jijilens:jijilens@localhost:5433/jijilens
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
+        with:
+          version: "0.11.7"  # the uv the lockfile and Dockerfile use
+          python-version: "3.14"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run tests
+        run: uv run pytest -q

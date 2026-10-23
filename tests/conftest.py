@@ -1,7 +1,12 @@
 import json
+import uuid
 from pathlib import Path
 
+import psycopg
 import pytest
+
+from jijilens import db
+from jijilens.config import load_settings
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -56,3 +61,31 @@ def advert() -> dict:
 @pytest.fixture
 def listing_page() -> dict:
     return json.loads((FIXTURES / "listing_page.json").read_text(encoding="utf-8"))
+
+
+@pytest.fixture(scope="session")
+def new_database():
+    """Makes empty, migrated databases on the compose (or CI) server; all are dropped at the end.
+
+    Returns the new database's URL. Skips the test when the server is down.
+    """
+    url = load_settings().database_url
+    try:
+        admin = psycopg.connect(url, autocommit=True)
+    except psycopg.OperationalError as exc:
+        pytest.skip(f"database not reachable: {exc}")
+    created: list[str] = []
+
+    def make() -> str:
+        name = f"jijilens_test_{uuid.uuid4().hex[:8]}"
+        admin.execute(f'CREATE DATABASE "{name}"')
+        created.append(name)
+        new_url = url.rsplit("/", 1)[0] + "/" + name
+        with db.connect(new_url) as conn:
+            db.migrate(conn)
+        return new_url
+
+    yield make
+    for name in created:
+        admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+    admin.close()

@@ -1,42 +1,28 @@
 """Snapshot export and load, between two throwaway databases on the compose server."""
 
-import uuid
-
 import numpy as np
 import psycopg
 import pytest
 
 from jijilens import db, snapshot
 from jijilens.collect import repo
-from jijilens.config import Category, load_settings
+from jijilens.config import Category
 from jijilens.search import store
 
 
 @pytest.fixture
-def make_db():
-    url = load_settings().database_url
-    try:
-        admin = psycopg.connect(url, autocommit=True)
-    except psycopg.OperationalError as exc:
-        pytest.skip(f"database not reachable: {exc}")
-    created = []
+def make_db(new_database):
+    connections = []
 
     def make() -> psycopg.Connection:
-        name = f"jijilens_test_{uuid.uuid4().hex[:8]}"
-        admin.execute(f'CREATE DATABASE "{name}"')
-        created.append(name)
-        conn = db.connect(url.rsplit("/", 1)[0] + "/" + name)
-        db.migrate(conn)
+        conn = db.connect(new_database())
         store.prepare(conn)
+        connections.append(conn)
         return conn
 
-    connections = []
-    yield lambda: connections.append(make()) or connections[-1]
+    yield make
     for conn in connections:
         conn.close()
-    for name in created:
-        admin.execute(f'DROP DATABASE IF EXISTS "{name}"')
-    admin.close()
 
 
 def test_export_then_load_into_an_empty_database(make_db, tmp_path):
