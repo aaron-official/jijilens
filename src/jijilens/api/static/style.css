@@ -37,6 +37,9 @@
 
 * { box-sizing: border-box; }
 
+/* Our display rules below would otherwise beat the hidden attribute. */
+[hidden] { display: none !important; }
+
 /* Thin scrollbars in the theme's colours. */
 html { scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -62,11 +65,10 @@ main { flex: 1; width: 100%; max-width: 1240px; margin: 0 auto; padding: 0 16px 
   max-width: 1240px; width: 100%; margin: 0 auto; padding: 18px 16px 14px;
   display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
 }
-.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 20px; }
-.logo { color: var(--accent); font-size: 22px; }
+.brand { font-weight: 700; font-size: 20px; letter-spacing: -.01em; }
 .tagline { margin: 0; color: var(--muted); }
 
-.start { display: grid; place-items: center; min-height: 60vh; }
+.start { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; min-height: 62vh; }
 .drop {
   width: min(520px, 100%); padding: 48px 24px; border: 2px dashed var(--line); border-radius: var(--radius);
   background: var(--surface); display: flex; flex-direction: column; align-items: center; gap: 6px;
@@ -79,7 +81,17 @@ main { flex: 1; width: 100%; max-width: 1240px; margin: 0 auto; padding: 0 16px 
   background: var(--accent); color: var(--accent-text); font-size: 28px; margin-bottom: 6px;
 }
 .drop-title { font-weight: 650; font-size: 17px; }
-.drop-hint { color: var(--muted); }
+.drop-hint { color: var(--muted); max-width: 34ch; }
+
+.steps {
+  list-style: none; margin: 0; padding: 0; display: flex; gap: 10px 22px; flex-wrap: wrap; justify-content: center;
+  color: var(--muted); font-size: 14px;
+}
+.steps li { display: flex; align-items: center; gap: 8px; }
+.steps span {
+  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  border: 1px solid var(--line); color: var(--text); font-size: 12px; font-weight: 600;
+}
 
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 20px; align-items: start; }
 @media (max-width: 860px) { .workspace { grid-template-columns: 1fr; } }
@@ -141,9 +153,10 @@ rect.drawing { fill: rgba(255, 255, 255, .12); stroke: #fff; stroke-width: 2; st
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .status .spin { animation-duration: 2.4s; } }
 
-.results-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.results-head h2 { font-size: 17px; margin: 4px 0 10px; }
-#crop-preview { border-radius: 8px; border: 1px solid var(--line); background: var(--surface); }
+.results-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; scroll-margin-top: 12px; }
+.results-head h2 { font-size: 17px; margin: 0; flex: 1; }
+#crop-preview { border-radius: 8px; border: 1px solid var(--line); background: var(--surface); width: 44px; height: 44px; flex: none; }
+.to-photo { display: none; font-size: 13.5px; padding: 6px 12px; }
 
 .notice { background: var(--warn-bg); color: var(--warn-text); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
 
@@ -168,3 +181,36 @@ rect.drawing { fill: rgba(255, 255, 255, .12); stroke: #fff; stroke-width: 2; st
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
 
 .foot { color: var(--muted); font-size: 12.5px; text-align: center; padding: 16px; }
+
+/* ---- phones and small tablets ---- */
+@media (max-width: 860px) {
+  .to-photo { display: inline-block; }
+  .stage img { max-height: 58vh; }
+}
+
+@media (max-width: 600px) {
+  body { font-size: 14.5px; }
+  .top { padding: 14px 16px 10px; gap: 2px 12px; }
+  .brand { font-size: 18px; }
+  .tagline { font-size: 13.5px; }
+  .start { min-height: 70vh; gap: 18px; }
+  .drop { padding: 36px 18px; }
+  .steps { flex-direction: column; align-items: flex-start; gap: 8px; }
+
+  .workspace { gap: 16px; }
+  .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .toolbar .select { grid-column: 1 / -1; }
+  .toolbar button { min-height: 40px; padding: 8px 12px; }
+  .select-button { width: 100%; }
+  .select-list { width: 100%; }
+  .select-list li { padding: 10px 12px; }
+  .stage { width: 100%; }
+  .stage img { width: 100%; max-height: none; }
+  .status { font-size: 13.5px; }
+
+  .results { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .card .body { padding: 7px 8px 9px; }
+  .card .title { font-size: 13px; }
+  .card .meta { flex-direction: column; gap: 0; }
+  .foot { padding: 14px 16px 20px; }
+}

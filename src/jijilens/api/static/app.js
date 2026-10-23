@@ -207,7 +207,23 @@ async function search(box) {
   }
   if (seq !== state.searchSeq) return; // a newer search started
   renderResults(found);
+  revealResults();
 }
+
+// On a phone the results sit below the photo; bring them into view after a tap
+// (unless they already are), and "Pick another object" takes the user back up.
+const narrow = window.matchMedia("(max-width: 860px)");
+
+function revealResults() {
+  if (!narrow.matches) return;
+  const head = $("results-head");
+  const top = head.getBoundingClientRect().top;
+  if (top < 0 || top > window.innerHeight * 0.6) head.scrollIntoView({ behavior: smooth(), block: "start" });
+}
+
+$("to-photo").addEventListener("click", () => $("stage").scrollIntoView({ behavior: smooth(), block: "start" }));
+
+const smooth = () => (window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
 
 function renderResults({ results, close_match, threshold }) {
   const list = $("results");
@@ -217,7 +233,7 @@ function renderResults({ results, close_match, threshold }) {
   }
   $("notice").hidden = close_match;
   $("notice").textContent =
-    "No close match in the catalog. These are the nearest listings it has. It covers 14 kinds of product: furniture, TVs, speakers, phones, laptops, watches, shoes, bags and clothing.";
+    "No close match. These are the nearest listings in the catalog.";
   list.replaceChildren(
     ...results.map((r) => {
       const close = threshold == null || r.similarity >= threshold;

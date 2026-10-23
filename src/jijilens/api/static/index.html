@@ -9,10 +9,7 @@
 </head>
 <body>
   <header class="top">
-    <div class="brand">
-      <span class="logo" aria-hidden="true">◎</span>
-      <span>JijiLens</span>
-    </div>
+    <div class="brand">JijiLens</div>
     <p class="tagline">Tap anything in a photo. Find it on Jiji.</p>
   </header>
 
@@ -22,8 +19,13 @@
         <input id="file" type="file" accept="image/*" hidden>
         <span class="drop-icon" aria-hidden="true">＋</span>
         <span class="drop-title">Upload a photo</span>
-        <span class="drop-hint">A room, an outfit, a desk. Or drop an image here.</span>
+        <span class="drop-hint">A room, an outfit, a desk. Take one or choose from your gallery.</span>
       </label>
+      <ol class="steps">
+        <li><span>1</span>Upload a photo</li>
+        <li><span>2</span>Tap an object in it</li>
+        <li><span>3</span>Open the match on Jiji</li>
+      </ol>
     </section>
 
     <section id="workspace" class="workspace" hidden>
@@ -48,9 +50,10 @@
       </div>
 
       <div class="results-panel">
-        <div class="results-head">
-          <h2 id="results-title">Matches on Jiji</h2>
+        <div class="results-head" id="results-head">
           <canvas id="crop-preview" width="56" height="56" hidden></canvas>
+          <h2 id="results-title">Matches on Jiji</h2>
+          <button id="to-photo" type="button" class="ghost to-photo">Pick another object</button>
         </div>
         <p class="notice" id="notice" hidden></p>
         <div class="results" id="results">
