@@ -10,6 +10,9 @@
   --box-active: #1f9d55;
   --warn-bg: #fff4d6;
   --warn-text: #6b4e00;
+  --hover: rgba(31, 157, 85, .10);
+  --scroll: #c6cec8;
+  --shadow: 0 12px 32px rgba(15, 25, 20, .14);
   --radius: 14px;
   color-scheme: light;
 }
@@ -25,11 +28,23 @@
     --accent-text: #08130d;
     --warn-bg: #3a3112;
     --warn-text: #f3dc95;
+    --hover: rgba(60, 207, 122, .12);
+    --scroll: #2f3a34;
+    --shadow: 0 12px 32px rgba(0, 0, 0, .45);
     color-scheme: dark;
   }
 }
 
 * { box-sizing: border-box; }
+
+/* Thin scrollbars in the theme's colours. */
+html { scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 body {
   margin: 0;
@@ -73,12 +88,31 @@ main { flex: 1; width: 100%; max-width: 1240px; margin: 0 auto; padding: 0 16px 
 @media (max-width: 860px) { .photo-panel { position: static; } }
 
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-select, button {
+button {
   font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line);
   border-radius: 999px; padding: 6px 14px; cursor: pointer;
 }
-button:hover, select:hover { border-color: var(--accent); }
-button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:hover { border-color: var(--accent); }
+button:focus-visible, a:focus-visible, .obj:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Category dropdown: a button and a listbox, so the open menu follows the theme too. */
+.select { position: relative; }
+.select-button { display: inline-flex; align-items: center; gap: 10px; min-width: 190px; justify-content: space-between; }
+.select-button[aria-expanded="true"] { border-color: var(--accent); }
+.chevron { width: 12px; height: 12px; fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s; }
+.select-button[aria-expanded="true"] .chevron { transform: rotate(180deg); }
+.select-list {
+  position: absolute; z-index: 10; top: calc(100% + 6px); left: 0; min-width: 100%; max-height: min(360px, 60vh); overflow-y: auto;
+  margin: 0; padding: 6px; list-style: none; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: var(--shadow); outline: none;
+}
+.select-list li {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 7px 10px; border-radius: 8px; cursor: pointer; white-space: nowrap;
+}
+.select-list li.current, .select-list li:hover { background: var(--hover); }
+.select-list li[aria-selected="true"] { color: var(--accent); font-weight: 600; }
+.select-list li[aria-selected="true"]::after { content: "✓"; }
 
 /* The stage shrinks to the photo, so the overlay's box always matches the image exactly. */
 .stage {
@@ -91,7 +125,9 @@ button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid
 .obj rect.frame { fill: transparent; stroke: var(--box); stroke-width: 3; vector-effect: non-scaling-stroke; cursor: pointer; }
 .obj:hover rect.frame { fill: rgba(255, 210, 63, .14); }
 .obj.active rect.frame { stroke: var(--box-active); fill: rgba(31, 157, 85, .16); stroke-width: 4; }
-.obj text { font: 600 13px system-ui, sans-serif; fill: #111; pointer-events: none; }
+/* Weight and family only: the size is set per label in photo pixels, so it reads the same at any zoom. */
+.obj text { font-weight: 600; font-family: system-ui, sans-serif; fill: #111; pointer-events: none; }
+.obj rect.tag { pointer-events: none; }
 .obj rect.tag { fill: var(--box); }
 .obj.active rect.tag { fill: var(--box-active); }
 .obj.active text { fill: #fff; }

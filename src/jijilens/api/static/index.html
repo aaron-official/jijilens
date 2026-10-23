@@ -29,9 +29,14 @@
     <section id="workspace" class="workspace" hidden>
       <div class="photo-panel">
         <div class="toolbar">
-          <select id="category" aria-label="Category">
-            <option value="">All categories</option>
-          </select>
+          <div class="select" id="category">
+            <button type="button" class="select-button" id="category-button" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="category-label category-button">
+              <span id="category-label" class="visually-hidden">Category</span>
+              <span class="select-value" id="category-value">All categories</span>
+              <svg class="chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>
+            </button>
+            <ul class="select-list" id="category-list" role="listbox" tabindex="-1" aria-label="Category" hidden></ul>
+          </div>
           <button id="whole" type="button" class="ghost">Search whole photo</button>
           <button id="again" type="button" class="ghost">New photo</button>
         </div>
