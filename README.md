@@ -2,7 +2,7 @@
 
 Multi-object visual product search for [Jiji Uganda](https://jiji.ug). You upload a photo of a room or an outfit, tap one object in it, and get visually similar listings. See [`Building Visual Product Search for Jiji Uganda.md`](Building%20Visual%20Product%20Search%20for%20Jiji%20Uganda.md) for the full design.
 
-**Status: milestone 1, search by photo.** Milestone 0 collected a demo catalog of 4,134 listings and 10,166 photos across 14 categories. Milestone 1 embeds those photos into pgvector and searches them with a photo or a crop of one, from the command line.
+**Status: milestone 2, the web app.** Milestone 0 collected a demo catalog of 4,134 listings and 10,166 photos across 14 categories. Milestone 1 embedded them into pgvector and measured search quality. Milestone 2 is a web page: upload a photo, the objects in it are outlined, and tapping one (or drawing a box) shows matching listings that link to Jiji.
 
 ## What is collected, and what isn't
 
@@ -60,6 +60,13 @@ uv run jijilens search room.jpg --crop 120,340,860,900 --category sofas
 uv run jijilens eval                 # Recall@K per category, threshold calibration, HNSW vs exact
 ```
 
+And the web app, on http://127.0.0.1:8765:
+
+```bash
+uv run jijilens serve                # loads both models once (~1-2 min on an old CPU), then ~1 s a search
+uv run jijilens serve --detector none   # draw boxes by hand only; starts faster
+```
+
 Each collection phase can also run on its own (`collect discover`, `collect details --limit 100`, `collect images`). Categories, caps and pacing live in [`config/collect.toml`](config/collect.toml).
 
 ## Search
@@ -68,6 +75,13 @@ Each collection phase can also run on its own (`collect discover`, `collect deta
 - **Storage.** `image_embeddings` holds one row per photo per model in an unsized `vector` column. Each model gets its own HNSW index over `embedding::vector(dim)`, limited to its rows. pgvector was chosen over FAISS or a hosted vector database because the listings already live in Postgres: one query does the nearest-neighbour search, filters (category, price, active only) and the join to titles and links, and closed listings drop out of results in the same transaction. At 10k vectors (~31 MB) speed doesn't decide it; `eval` measures it anyway.
 - **Ranking.** A search fetches the nearest photos, keeps each listing's best one, and returns one result per listing, so an ad with five photos can't fill the list.
 - **Evaluation.** `jijilens eval` is leave-one-out: each listing's second photo searches the whole catalog, and Recall@K is how often that listing comes back in the top K. Another seller's ad for the same product counts as a miss, so this is a lower bound. Each query's best match in a *different* category stands in for an out-of-catalog search, which calibrates the "no close matches" threshold. A sample of queries is also run through HNSW and through exact numpy search to report the index's recall and latency. Reports go to `data/eval/`.
+
+## Web app
+
+- **One process** ([`api/app.py`](src/jijilens/api/app.py)) loads SigLIP 2 and the detector once and serves both the JSON API and the page ([`api/static/`](src/jijilens/api/static), plain HTML/CSS/JS, no build step). Uploads stay in memory (the last 50) and are never written to disk.
+- **Detection only proposes boxes.** [OmDet-Turbo](https://huggingface.co/omlab/omdet-turbo-swin-tiny-hf) finds objects from a list of names. Its labels are unreliable on phone photos, so the catalog search decides what the object is. On a 2012 dual-core CPU it takes 5-9 s per photo, against ~31 s for Grounding DINO tiny and ~4 s for OWL-ViT B/32, which missed objects. The page runs it in the background; you can draw a box at any time.
+- **No close match.** If the best result is below the model's calibrated similarity (0.80 for SigLIP 2), the page says so and labels the results as the nearest the catalog has. A mouse or a TV remote, neither of which the catalog stocks, gets this state; a JBL speaker returns a JBL Xtreme first.
+- Result photos load from Jiji's own image links, and every result links to the listing.
 
 ## Tests
 
@@ -82,7 +96,7 @@ The database tests run against the compose database inside a rolled-back transac
 ```
 config/collect.toml          categories, caps, pacing
 db/migrations/               schema (categories, listings, listing_images, image_embeddings)
-src/jijilens/cli.py          jijilens db | collect | stats | export | embed | search | eval
+src/jijilens/cli.py          jijilens db | collect | stats | export | embed | search | eval | serve
 src/jijilens/collect/
   http.py                    polite client: pacing, retries, stop on repeated failure
   discover.py                phase 1, listing API
@@ -92,7 +106,11 @@ src/jijilens/collect/
   privacy.py                 contact-detail scrubbing
   images.py                  phase 3, download, validate, strip metadata, hash
   repo.py                    SQL
+src/jijilens/api/
+  app.py                     FastAPI: upload, detect, search; serves the page
+  static/                    the page (HTML, CSS, JS)
 src/jijilens/search/
+  detector.py                open-vocabulary object detection (OmDet-Turbo, Grounding DINO)
   embedder.py                models (SigLIP 2, MobileCLIP2) and image -> vector
   embed.py                   embed the catalog, then build the HNSW index
   store.py                   pgvector SQL: save, index, nearest images
@@ -103,4 +121,4 @@ tests/                       unit tests with fake fixtures
 
 ## Next
 
-Milestone 2 adds the multi-object part: a FastAPI backend and web page where you upload a photo, detected objects are outlined, and tapping one searches with its crop.
+Deployment: one Docker image (app + models) on a Hugging Face Space, with the catalog in a hosted Postgres with pgvector. Then milestone 3: fine-tune the embedding model on listing photos and re-rank with listing text and attributes.
