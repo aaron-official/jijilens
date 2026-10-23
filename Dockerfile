@@ -19,7 +19,7 @@ WORKDIR /app
 
 # Dependencies first, so code changes don't reinstall PyTorch.
 COPY pyproject.toml uv.lock README.md ./
-# uv's download cache lives in a build cache, not in the image (it was 1.2 GB).
+# uv's download cache lives in a build cache, so rebuilds don't download it again.
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 COPY db ./db
