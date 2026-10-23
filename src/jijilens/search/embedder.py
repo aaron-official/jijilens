@@ -57,6 +57,7 @@ class Embedder:
         model, _, preprocess = open_clip.create_model_and_transforms(spec.arch, pretrained=spec.pretrained)
         self._model = model.eval()
         self._preprocess = preprocess
+        self._tokenizer = open_clip.get_tokenizer(spec.arch)
 
     def embed(self, images: list[Image.Image]) -> np.ndarray:
         """One L2-normalised float32 row per image."""
@@ -64,5 +65,13 @@ class Embedder:
         batch = torch.stack([self._preprocess(image.convert("RGB")) for image in images])
         with torch.inference_mode():
             features = self._model.encode_image(batch).float()
+        features = torch.nn.functional.normalize(features, dim=-1)
+        return features.numpy().astype(np.float32)
+
+    def embed_texts(self, texts: list[str]) -> np.ndarray:
+        """Text into the same space as images, so a crop can be compared with words."""
+        torch = self._torch
+        with torch.inference_mode():
+            features = self._model.encode_text(self._tokenizer(texts)).float()
         features = torch.nn.functional.normalize(features, dim=-1)
         return features.numpy().astype(np.float32)
