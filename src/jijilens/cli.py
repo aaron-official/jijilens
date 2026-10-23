@@ -4,6 +4,9 @@
     jijilens collect discover|details|images|all [--limit N] [--max-listings N]
     jijilens stats
     jijilens export [--out DIR]
+    jijilens embed [--model NAME] [--limit N] [--batch-size N]
+    jijilens search PHOTO [--crop x1,y1,x2,y2] [--category KEY] [-k N] [--model NAME]
+    jijilens eval [--model NAME] [--hnsw-sample N]
 """
 
 from __future__ import annotations
@@ -23,6 +26,8 @@ from jijilens.collect.discover import discover
 from jijilens.collect.http import PoliteClient, TooManyFailures
 from jijilens.collect.images import download_images
 from jijilens.config import DEFAULT_CONFIG, CollectConfig, load_settings
+from jijilens.search import store
+from jijilens.search.embedder import DEFAULT_MODEL, MODELS, get_spec
 
 
 def log(message: str) -> None:
@@ -47,6 +52,24 @@ def main(argv: list[str] | None = None) -> int:
     export = sub.add_parser("export", help="write listings.jsonl and images.jsonl for the embedding step")
     export.add_argument("--out", type=Path, help="default: <DATA_DIR>/export")
 
+    embed = sub.add_parser("embed", help="embed downloaded images and build the vector index")
+    embed.add_argument("--model", choices=list(MODELS), default=DEFAULT_MODEL)
+    embed.add_argument("--limit", type=int, help="at most this many images this run")
+    embed.add_argument("--batch-size", type=int, default=16)
+
+    search = sub.add_parser("search", help="find listings that look like a photo")
+    search.add_argument("photo", type=Path)
+    search.add_argument("--crop", help="x1,y1,x2,y2 in pixels: search with just this part of the photo")
+    search.add_argument("--category", help="only this collection category, e.g. sofas")
+    search.add_argument("-k", type=int, default=10, help="how many listings to show")
+    search.add_argument("--model", choices=list(MODELS), default=DEFAULT_MODEL)
+    search.add_argument("--min-similarity", type=float, help="below this, report no close matches")
+
+    evaluate = sub.add_parser("eval", help="measure retrieval quality and index speed")
+    evaluate.add_argument("--model", choices=list(MODELS), default=DEFAULT_MODEL)
+    evaluate.add_argument("--hnsw-sample", type=int, default=200, help="queries to compare HNSW against exact search")
+    evaluate.add_argument("--out", type=Path, help="default: <DATA_DIR>/eval")
+
     args = parser.parse_args(argv)
     settings = load_settings()
     with db.connect(settings.database_url) as conn:
@@ -60,6 +83,12 @@ def main(argv: list[str] | None = None) -> int:
             return _stats(conn)
         if args.command == "export":
             return _export(conn, args.out or settings.data_dir / "export")
+        if args.command == "embed":
+            return _embed(conn, settings, args)
+        if args.command == "search":
+            return _search(conn, settings, args)
+        if args.command == "eval":
+            return _eval(conn, args, args.out or settings.data_dir / "eval")
     return 1
 
 
@@ -111,6 +140,84 @@ def _export(conn, out_dir: Path) -> int:
                 f.write(json.dumps(row, default=_json_default, ensure_ascii=False) + "\n")
                 n += 1
         log(f"{n} {name} -> {path}")
+    return 0
+
+
+def _embed(conn, settings, args) -> int:
+    from jijilens.search.embed import embed_catalog
+    from jijilens.search.embedder import Embedder
+
+    spec = get_spec(args.model)
+    log(f"loading {spec.name} ({spec.arch})")
+    store.prepare(conn)
+    try:
+        counts = embed_catalog(conn, Embedder(spec), settings.data_dir, batch_size=args.batch_size, limit=args.limit, log=log)
+    except KeyboardInterrupt:
+        conn.rollback()
+        log("\ninterrupted; embedded batches are kept, run the same command to resume")
+        return 130
+    log(f"done: {counts}")
+    return 0
+
+
+def _model_id(conn, spec) -> int | None:
+    row = conn.execute("SELECT id FROM embedding_models WHERE name = %s", (spec.name,)).fetchone()
+    return row["id"] if row else None
+
+
+def _search(conn, settings, args) -> int:
+    from jijilens.search.embedder import Embedder
+    from jijilens.search.query import load_query_image, parse_box, search
+
+    spec = get_spec(args.model)
+    model_id = _model_id(conn, spec)
+    if model_id is None:
+        log(f"no {spec.name} embeddings yet; run: jijilens embed --model {spec.name}")
+        return 1
+    image = load_query_image(args.photo, parse_box(args.crop) if args.crop else None)
+    store.prepare(conn)
+    matches = search(conn, Embedder(spec), model_id, image, k=args.k, category=args.category)
+    if args.min_similarity is not None:
+        matches = [m for m in matches if m.similarity >= args.min_similarity]
+    if not matches:
+        log("no close matches")
+        return 0
+    cards = store.listing_cards(conn, [m.listing_id for m in matches])
+    for n, match in enumerate(matches, 1):
+        card = cards[match.listing_id]
+        price = f"UGX {card['price_ugx']:,}" if card["price_ugx"] else (card["price_text"] or "no price")
+        log(f"{n:>2}  {match.similarity:.3f}  {card['category']:<13} {price:<16} {card['title']}")
+        log(f"    {card['source_url']}")
+        log(f"    {settings.data_dir / match.local_path}")
+    return 0
+
+
+def _eval(conn, args, out_dir: Path) -> int:
+    from jijilens.search.evaluate import evaluate
+
+    spec = get_spec(args.model)
+    model_id = _model_id(conn, spec)
+    if model_id is None:
+        log(f"no {spec.name} embeddings yet; run: jijilens embed --model {spec.name}")
+        return 1
+    store.prepare(conn)
+    report = {"model": spec.name, "run_at": datetime.now().isoformat(timespec="seconds")}
+    report.update(evaluate(conn, model_id, spec.dim, hnsw_sample=args.hnsw_sample))
+
+    retrieval = report["retrieval"]
+    columns = [c for c in retrieval["overall"] if c != "queries"]
+    log(f"{spec.name}: {report['images']} images, {report['listings']} listings\n")
+    log(f"{'category':<15}{'queries':>8}" + "".join(f"{c:>12}" for c in columns))
+    for name, row in [*retrieval["categories"].items(), ("ALL", retrieval["overall"])]:
+        log(f"{name:<15}{row['queries']:>8}" + "".join(f"{row[c]:>12.3f}" for c in columns))
+    log(f"\nsimilarity to own listing:      {report['calibration']['own_listing']}")
+    log(f"best match in another category: {report['calibration']['other_category']}")
+    log(f"HNSW vs exact: {report['hnsw']}")
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{spec.name}-{report['run_at'].replace(':', '')}.json"
+    path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    log(f"\nsaved {path}")
     return 0
 
 
