@@ -7,6 +7,7 @@
     jijilens embed [--model NAME] [--limit N] [--batch-size N]
     jijilens search PHOTO [--crop x1,y1,x2,y2] [--category KEY] [-k N] [--model NAME]
     jijilens eval [--model NAME] [--hnsw-sample N]
+    jijilens serve [--host H] [--port N] [--model NAME] [--detector NAME|none]
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from jijilens.collect.http import PoliteClient, TooManyFailures
 from jijilens.collect.images import download_images
 from jijilens.config import DEFAULT_CONFIG, CollectConfig, load_settings
 from jijilens.search import store
+from jijilens.search.detector import DEFAULT_DETECTOR, DETECTORS
 from jijilens.search.embedder import DEFAULT_MODEL, MODELS, get_spec
 
 
@@ -70,7 +72,15 @@ def main(argv: list[str] | None = None) -> int:
     evaluate.add_argument("--hnsw-sample", type=int, default=200, help="queries to compare HNSW against exact search")
     evaluate.add_argument("--out", type=Path, help="default: <DATA_DIR>/eval")
 
+    serve = sub.add_parser("serve", help="run the web app")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument("--model", choices=list(MODELS), default=DEFAULT_MODEL)
+    serve.add_argument("--detector", choices=[*DETECTORS, "none"], default=DEFAULT_DETECTOR)
+
     args = parser.parse_args(argv)
+    if args.command == "serve":
+        return _serve(load_settings(), args)
     settings = load_settings()
     with db.connect(settings.database_url) as conn:
         if args.command == "db":
@@ -160,17 +170,12 @@ def _embed(conn, settings, args) -> int:
     return 0
 
 
-def _model_id(conn, spec) -> int | None:
-    row = conn.execute("SELECT id FROM embedding_models WHERE name = %s", (spec.name,)).fetchone()
-    return row["id"] if row else None
-
-
 def _search(conn, settings, args) -> int:
     from jijilens.search.embedder import Embedder
     from jijilens.search.query import load_query_image, parse_box, search
 
     spec = get_spec(args.model)
-    model_id = _model_id(conn, spec)
+    model_id = store.model_id(conn, spec.name)
     if model_id is None:
         log(f"no {spec.name} embeddings yet; run: jijilens embed --model {spec.name}")
         return 1
@@ -196,7 +201,7 @@ def _eval(conn, args, out_dir: Path) -> int:
     from jijilens.search.evaluate import evaluate
 
     spec = get_spec(args.model)
-    model_id = _model_id(conn, spec)
+    model_id = store.model_id(conn, spec.name)
     if model_id is None:
         log(f"no {spec.name} embeddings yet; run: jijilens embed --model {spec.name}")
         return 1
@@ -218,6 +223,26 @@ def _eval(conn, args, out_dir: Path) -> int:
     path = out_dir / f"{spec.name}-{report['run_at'].replace(':', '')}.json"
     path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     log(f"\nsaved {path}")
+    return 0
+
+
+def _serve(settings, args) -> int:
+    import uvicorn
+
+    from jijilens.api.app import create_app
+    from jijilens.search.detector import Detector
+    from jijilens.search.embedder import Embedder
+
+    spec = get_spec(args.model)
+    log(f"loading {spec.name}")
+    embedder = Embedder(spec)
+    detector = None
+    if args.detector != "none":
+        log(f"loading {args.detector}")
+        detector = Detector(DETECTORS[args.detector])
+    app = create_app(settings.database_url, embedder, detector)
+    log(f"JijiLens on http://{args.host}:{args.port}")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     return 0
 
 
