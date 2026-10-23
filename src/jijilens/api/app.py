@@ -14,6 +14,7 @@ at once and fighting over the CPU.
 from __future__ import annotations
 
 import io
+import os
 import threading
 import uuid
 from collections import OrderedDict
@@ -23,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -31,6 +32,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, Field
 
+from jijilens.api.limits import Limits, RateLimiter
 from jijilens.search import store
 from jijilens.search.detector import LABELS, Detector
 from jijilens.search.embedder import Embedder
@@ -39,7 +41,8 @@ from jijilens.search.query import search_vector
 STATIC_DIR = Path(__file__).parent / "static"
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 MAX_SIDE = 1600  # uploads are scaled down to this; boxes are in the scaled photo's pixels
-PHOTOS_KEPT = 50  # recent uploads kept in memory so each search doesn't re-upload
+# Recent uploads kept in memory so each search doesn't re-upload; each is up to ~7.5 MB.
+PHOTOS_KEPT = int(os.environ.get("JIJILENS_PHOTOS_KEPT", "20"))
 
 
 @dataclass
@@ -48,6 +51,7 @@ class Photo:
     # Vectors of the detected objects' crops, computed once at detection, so
     # tapping an object only has to query the database.
     vectors: dict[tuple[int, int, int, int], np.ndarray] = field(default_factory=dict)
+    objects: list[dict] | None = None  # detection result, so a photo is detected once
 
 
 class PhotoCache:
@@ -100,7 +104,9 @@ def crop(image: Image.Image, box: list[int] | None) -> Image.Image:
     return image.crop((x1, y1, x2, y2))
 
 
-def create_app(database_url: str, embedder: Embedder, detector: Detector | None = None) -> FastAPI:
+def create_app(
+    database_url: str, embedder: Embedder, detector: Detector | None = None, limits: Limits | None = None
+) -> FastAPI:
     def configure(conn) -> None:
         store.prepare(conn)
         conn.commit()
@@ -109,6 +115,7 @@ def create_app(database_url: str, embedder: Embedder, detector: Detector | None 
         database_url, min_size=1, max_size=4, kwargs={"row_factory": dict_row}, configure=configure, open=False
     )
     photos = PhotoCache()
+    limiter = RateLimiter(limits or Limits.from_env())
     embed_lock, detect_lock = threading.Lock(), threading.Lock()
     spec = embedder.spec
     state: dict = {}
@@ -137,7 +144,8 @@ def create_app(database_url: str, embedder: Embedder, detector: Detector | None 
             return store.categories(conn)
 
     @app.post("/api/photos")
-    def upload(file: UploadFile = File(...)) -> dict:
+    def upload(request: Request, file: UploadFile = File(...)) -> dict:
+        limiter.photo(request)
         data = file.file.read(MAX_UPLOAD_BYTES + 1)
         if len(data) > MAX_UPLOAD_BYTES:
             raise HTTPException(413, f"photo is over {MAX_UPLOAD_BYTES // (1024 * 1024)} MB")
@@ -149,9 +157,12 @@ def create_app(database_url: str, embedder: Embedder, detector: Detector | None 
         if detector is None:
             raise HTTPException(503, "object detection is off; draw a box instead")
         photo = photos.get(photo_id)
+        if photo.objects is not None:
+            return {"objects": photo.objects}
         with detect_lock:
             found = detector.detect(photo.image)
         if not found:
+            photo.objects = []
             return {"objects": []}
         # The detector's boxes are good but its names often aren't; SigLIP names each crop instead.
         with embed_lock:
@@ -161,18 +172,20 @@ def create_app(database_url: str, embedder: Embedder, detector: Detector | None 
         for d, vector, name in zip(found, vectors, names):
             photo.vectors[d.box] = vector
             objects.append({"box": list(d.box), "label": LABELS[name], "detector_label": d.label, "score": round(d.score, 3)})
+        photo.objects = objects
         return {"objects": objects}
 
     @app.post("/api/photos/{photo_id}/search")
-    def search_photo(photo_id: str, request: SearchRequest) -> dict:
+    def search_photo(photo_id: str, body: SearchRequest, request: Request) -> dict:
+        limiter.search(request)
         photo = photos.get(photo_id)
-        vector = photo.vectors.get(tuple(request.box)) if request.box else None
+        vector = photo.vectors.get(tuple(body.box)) if body.box else None
         if vector is None:
-            query = crop(photo.image, request.box)
+            query = crop(photo.image, body.box)
             with embed_lock:
                 vector = embedder.embed([query])[0]
         with pool.connection() as conn:
-            matches = search_vector(conn, state["model_id"], spec.dim, vector, k=request.k, category=request.category)
+            matches = search_vector(conn, state["model_id"], spec.dim, vector, k=body.k, category=body.category)
             cards = store.listing_cards(conn, [m.listing_id for m in matches])
         results = [
             {

@@ -9,6 +9,7 @@ import pytest
 from PIL import Image
 
 from jijilens import db
+from jijilens.api.limits import Limits
 from jijilens.config import load_settings
 from jijilens.search import store
 from jijilens.search.detector import LABELS, Detection, DetectorSpec, clean, iou
@@ -53,12 +54,15 @@ def database_url():
     return url
 
 
-def make_client(database_url, detector=None, embedder=None):
+NO_LIMITS = Limits(photos_per_minute=0, searches_per_minute=0, photos_per_day=0)
+
+
+def make_client(database_url, detector=None, embedder=None, limits=NO_LIMITS):
     from fastapi.testclient import TestClient
 
     from jijilens.api.app import create_app
 
-    return TestClient(create_app(database_url, embedder or FakeEmbedder(), detector))
+    return TestClient(create_app(database_url, embedder or FakeEmbedder(), detector, limits))
 
 
 def jpeg(width=400, height=300):
@@ -126,3 +130,31 @@ def test_clean_drops_duplicates_and_tiny_boxes():
     assert [d.label for d in clean([*found, sofa], 960, 800)] == ["mobile phone", "shoe"]
     assert [d.label for d in clean([sofa], 960, 800)] == ["sofa"]  # alone, it is the object
     assert iou((0, 0, 10, 10), (0, 0, 10, 10)) == 1.0
+
+
+def test_detection_runs_once_per_photo(database_url):
+    class CountingDetector(FakeDetector):
+        calls = 0
+
+        def detect(self, image):
+            CountingDetector.calls += 1
+            return super().detect(image)
+
+    with make_client(database_url, CountingDetector()) as client:
+        photo = client.post("/api/photos", files={"file": ("room.jpg", jpeg(), "image/jpeg")}).json()
+        first = client.post(f"/api/photos/{photo['photo_id']}/objects").json()
+        again = client.post(f"/api/photos/{photo['photo_id']}/objects").json()
+        assert first == again and CountingDetector.calls == 1
+
+
+def test_limits_return_429_with_a_message(database_url):
+    limits = Limits(photos_per_minute=1, searches_per_minute=2, photos_per_day=0)
+    with make_client(database_url, limits=limits) as client:
+        upload = lambda: client.post("/api/photos", files={"file": ("room.jpg", jpeg(), "image/jpeg")})
+        photo = upload().json()
+        blocked = upload()
+        assert blocked.status_code == 429
+        assert "1 new photo a minute" in blocked.json()["detail"] and int(blocked.headers["Retry-After"]) > 0
+
+        search = lambda: client.post(f"/api/photos/{photo['photo_id']}/search", json={"k": 1})
+        assert [search().status_code for _ in range(3)] == [200, 200, 429]
