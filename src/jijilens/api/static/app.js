@@ -82,7 +82,10 @@ function drawObjects() {
   const svg = $("overlay");
   svg.querySelectorAll(".obj").forEach((g) => g.remove());
   const scale = displayScale(); // photo pixels per screen pixel, to keep labels a constant size
-  state.objects.forEach((obj, i) => {
+  // Biggest first, so smaller boxes sit on top and stay reachable.
+  const order = state.objects.map((obj, i) => i).sort((a, b) => area(state.objects[b].box) - area(state.objects[a].box));
+  order.forEach((i) => {
+    const obj = state.objects[i];
     const [x1, y1, x2, y2] = obj.box;
     const g = el("g", { class: "obj", "data-index": i, tabindex: 0, role: "button", "aria-label": `Search for this ${obj.label}` });
     g.append(el("rect", { class: "frame", x: x1, y: y1, width: x2 - x1, height: y2 - y1, rx: 6 * scale }));
@@ -117,9 +120,8 @@ let drag = null;
 
 $("overlay").addEventListener("pointerdown", (e) => {
   if (!state.photoId) return;
-  const target = e.target.closest(".obj");
   const p = toPhoto(e);
-  drag = { x: p.x, y: p.y, sx: e.clientX, sy: e.clientY, target, rect: null };
+  drag = { x: p.x, y: p.y, sx: e.clientX, sy: e.clientY, rect: null };
   $("overlay").setPointerCapture(e.pointerId);
 });
 
@@ -137,7 +139,7 @@ $("overlay").addEventListener("pointermove", (e) => {
 
 $("overlay").addEventListener("pointerup", (e) => {
   if (!drag) return;
-  const { rect, target } = drag;
+  const { rect, x, y } = drag;
   drag = null;
   if (rect) {
     const p = toPhoto(e);
@@ -145,8 +147,9 @@ $("overlay").addEventListener("pointerup", (e) => {
     const box = norm(...[rect.x.baseVal.value, rect.y.baseVal.value].map(Math.round), Math.round(p.x), Math.round(p.y));
     const minSide = 16 * displayScale();
     if (box[2] - box[0] >= minSide && box[3] - box[1] >= minSide) search(box);
-  } else if (target) {
-    search(state.objects[target.dataset.index].box);
+  } else {
+    const hit = objectAt(x, y);
+    if (hit) search(hit.box);
   }
 });
 
@@ -163,6 +166,15 @@ function toPhoto(e) {
   };
 }
 
+// The smallest object under a point: a remote held in front of a speaker is
+// inside the speaker's box, and tapping it means the remote.
+function objectAt(x, y) {
+  const under = state.objects.filter(({ box: [x1, y1, x2, y2] }) => x >= x1 && x <= x2 && y >= y1 && y <= y2);
+  return under.sort((a, b) => area(a.box) - area(b.box))[0] || null;
+}
+
+const area = ([x1, y1, x2, y2]) => (x2 - x1) * (y2 - y1);
+
 function displayScale() {
   const w = $("overlay").getBoundingClientRect().width;
   return w ? state.width / w : 1;
@@ -171,7 +183,6 @@ function displayScale() {
 // ---- search ---------------------------------------------------------------
 
 $("whole").addEventListener("click", () => state.photoId && search(null));
-$("category").addEventListener("change", () => state.searched && search(state.box));
 
 async function search(box) {
   if (!state.photoId) return;
@@ -188,7 +199,7 @@ async function search(box) {
     found = await api(`/api/photos/${state.photoId}/search`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ box: state.box, category: $("category").value || null, k: 12 }),
+      body: JSON.stringify({ box: state.box, category: category.value || null, k: 12 }),
     });
   } catch (err) {
     if (seq === state.searchSeq) showEmpty(`Search failed: ${err.message}`);
@@ -299,8 +310,86 @@ function textEl(tag, className, text) {
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const norm = (ax, ay, bx, by) => [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)];
 
-// ---- categories -----------------------------------------------------------
+// ---- category dropdown ----------------------------------------------------
+// A button plus a listbox instead of a <select>, so the open menu follows the
+// theme. Keyboard: Enter/Space/arrows open it, arrows move, Enter picks, Esc closes.
+
+const category = {
+  value: "",
+  options: [{ key: "", label: "All categories" }],
+  current: 0, // highlighted option while open
+  button: $("category-button"),
+  list: $("category-list"),
+
+  render() {
+    this.list.replaceChildren(
+      ...this.options.map((o, i) => {
+        const li = textEl("li", i === this.current ? "current" : "", o.label);
+        Object.assign(li, { id: `category-${i}` });
+        li.setAttribute("role", "option");
+        li.setAttribute("aria-selected", String(o.key === this.value));
+        li.addEventListener("pointerdown", (e) => e.preventDefault()); // keep focus on the list
+        li.addEventListener("click", () => this.pick(i));
+        return li;
+      }),
+    );
+    this.list.setAttribute("aria-activedescendant", `category-${this.current}`);
+  },
+  open() {
+    this.current = Math.max(0, this.options.findIndex((o) => o.key === this.value));
+    this.render();
+    this.list.hidden = false;
+    this.button.setAttribute("aria-expanded", "true");
+    this.list.focus();
+    this.list.children[this.current]?.scrollIntoView({ block: "nearest" });
+  },
+  close(focusButton = true) {
+    if (this.list.hidden) return;
+    this.list.hidden = true;
+    this.button.setAttribute("aria-expanded", "false");
+    if (focusButton) this.button.focus();
+  },
+  move(step) {
+    this.current = clamp(this.current + step, 0, this.options.length - 1);
+    this.render();
+    this.list.children[this.current].scrollIntoView({ block: "nearest" });
+  },
+  pick(i) {
+    const changed = this.options[i].key !== this.value;
+    this.value = this.options[i].key;
+    $("category-value").textContent = this.options[i].label;
+    this.close();
+    if (changed && state.searched) search(state.box);
+  },
+};
+
+category.button.addEventListener("click", () => (category.list.hidden ? category.open() : category.close()));
+category.button.addEventListener("keydown", (e) => {
+  if (["ArrowDown", "ArrowUp"].includes(e.key)) { e.preventDefault(); category.open(); }
+});
+category.list.addEventListener("keydown", (e) => {
+  const keys = {
+    ArrowDown: () => category.move(1),
+    ArrowUp: () => category.move(-1),
+    Home: () => category.move(-Infinity),
+    End: () => category.move(Infinity),
+    Enter: () => category.pick(category.current),
+    " ": () => category.pick(category.current),
+    Escape: () => category.close(),
+    Tab: () => category.close(false),
+  };
+  if (keys[e.key]) {
+    if (e.key !== "Tab") e.preventDefault();
+    keys[e.key]();
+  }
+});
+category.list.addEventListener("blur", (e) => {
+  if (e.relatedTarget !== category.button) category.close(false); // the button's own click toggles it
+});
+document.addEventListener("pointerdown", (e) => {
+  if (!$("category").contains(e.target)) category.close(false);
+});
 
 api("/api/categories")
-  .then((cats) => cats.forEach((c) => $("category").append(new Option(c.label, c.key))))
+  .then((cats) => category.options.push(...cats))
   .catch(() => {});
