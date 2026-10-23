@@ -76,7 +76,9 @@ async function detect(photoId) {
     return;
   }
   setStatus(`Found ${found.objects.length} object${found.objects.length > 1 ? "s" : ""}. Tap one, or drag to draw your own box.`);
-  if (!state.searched) search(found.objects[0].box); // show something useful straight away
+  // Start with every object's matches; tapping one narrows to it. Not if the
+  // user already drew or tapped a box while detection ran.
+  if (!state.searched) searchWhole();
 }
 
 function drawObjects() {
